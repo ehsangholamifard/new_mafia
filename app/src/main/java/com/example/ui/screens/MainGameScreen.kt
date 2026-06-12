@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -85,11 +86,13 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val gameHistory by viewModel.gameHistory.collectAsStateWithLifecycle()
         val totalInquiries by viewModel.totalInquiries.collectAsStateWithLifecycle()
         val remainingInquiries by viewModel.remainingInquiries.collectAsStateWithLifecycle()
+        val moderatorName by viewModel.moderatorName.collectAsStateWithLifecycle()
 
         var showCapabilitiesTemplateDialog by remember { mutableStateOf(false) }
         var showExportImportDialog by remember { mutableStateOf(false) }
         var showAddCustomRoleDialog by remember { mutableStateOf(false) }
         var showHistoryDialog by remember { mutableStateOf(false) }
+        var showModeratorNameDialog by remember { mutableStateOf(false) }
         var roleToConfigureCapabilities by remember { mutableStateOf<RoleEntity?>(null) }
 
         // Day Phase Timer Hoisted State
@@ -175,7 +178,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             },
                             onResetRoles = { viewModel.resetRolesToDefaults() },
                             onManageTemplates = { showCapabilitiesTemplateDialog = true },
-                            onStartGame = { viewModel.distributeRolesAndStartGame() },
+                            onStartGame = { showModeratorNameDialog = true },
                             onAddCustomRoleRequest = { showAddCustomRoleDialog = true },
                             onExportImport = { showExportImportDialog = true },
                             onShowHistory = { showHistoryDialog = true },
@@ -415,6 +418,19 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                     GameHistoryDialog(
                         history = gameHistory,
                         onDismiss = { showHistoryDialog = false }
+                    )
+                }
+
+                // Moderator Name Prompt Dialog
+                if (showModeratorNameDialog) {
+                    ModeratorNamePromptDialog(
+                        initialValue = moderatorName,
+                        onConfirm = { name ->
+                            viewModel.setModeratorName(name)
+                            viewModel.distributeRolesAndStartGame()
+                            showModeratorNameDialog = false
+                        },
+                        onDismissRequest = { showModeratorNameDialog = false }
                     )
                 }
 
@@ -1519,6 +1535,7 @@ fun PlayStageContent(
     var showNightReportDialog by remember { mutableStateOf(false) }
     var nightReportContents by remember { mutableStateOf<List<String>>(emptyList()) }
     var showInquiryPromptDialog by remember { mutableStateOf(false) }
+    var showDayStatsDialog by remember { mutableStateOf(false) }
 
     // Helper to generate a smart structured night summary
     fun generateNightSummary(allLogs: List<GameLogEntity>, playersList: List<PlayerEntity>): List<String> {
@@ -1526,31 +1543,52 @@ fun PlayStageContent(
         val nightTransitionIdx = reversed.indexOfFirst { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
         val relevantLogs = if (nightTransitionIdx != -1) reversed.subList(0, nightTransitionIdx) else reversed
 
-        val killsLogs = relevantLogs.filter { it.message.contains("💀") && !it.message.contains("🔪") }
+        val killsLogs = relevantLogs.filter { it.message.contains("💀") && !it.message.contains("کنش") && !it.message.contains("برچسب") }
         val slaughterLogs = relevantLogs.filter { it.message.contains("🔪") }
         val muteLogs = relevantLogs.filter { it.message.contains("🔇") }
         val blockLogs = relevantLogs.filter { it.message.contains("🚫") }
         val saveLogs = relevantLogs.filter { it.message.contains("🩺") }
 
+        fun extractName(msg: String): String? {
+            val start = msg.indexOf("«")
+            val end = msg.indexOf("»")
+            return if (start != -1 && end != -1 && end > start) {
+                msg.substring(start + 1, end)
+            } else null
+        }
+
         val summary = mutableListOf<String>()
 
-        val totalKilledNames = playersList.filter { it.isKilledToday }.map { it.name }
-        if (totalKilledNames.isNotEmpty()) {
-            summary.add("💀 تلفات دیشب: ${totalKilledNames.joinToString("، ")} کشته شدند.")
+        val nightKilledNames = killsLogs.mapNotNull { extractName(it.message) }.distinct()
+        if (nightKilledNames.isNotEmpty()) {
+            summary.add("💀 تلفات دیشب: ${nightKilledNames.joinToString("، ")} کشته شدند.")
         }
-        if (slaughterLogs.isNotEmpty()) {
+
+        val slaughteredNames = slaughterLogs.mapNotNull { extractName(it.message) }.distinct()
+        if (slaughteredNames.isNotEmpty()) {
+            summary.add("🔪 سلاخی دیشب: بازیکن «${slaughteredNames.joinToString("، ")}» سلاخی شد!")
+        } else if (slaughterLogs.isNotEmpty()) {
             summary.add("🔪 سلاخی: بله، دیشب سلاخی رخ داد!")
         }
-        if (muteLogs.isNotEmpty()) {
-            val mutedNames = playersList.filter { it.isMuted }.map { it.name }
-            if (mutedNames.isNotEmpty()) {
-                summary.add("🔇 سکوت: ${mutedNames.joinToString("، ")} امروز حق صحبت ندارند.")
-            }
+
+        val mutedNames = muteLogs.mapNotNull { extractName(it.message) }.distinct()
+        if (mutedNames.isNotEmpty()) {
+            summary.add("🔇 سکوت دیشب: ${mutedNames.joinToString("، ")} امروز حق صحبت ندارند.")
+        } else if (muteLogs.isNotEmpty()) {
+            summary.add("🔇 سکوت: امروز برخی بازیکنان حق صحبت ندارند.")
         }
-        if (blockLogs.isNotEmpty()) {
+
+        val blockedNames = blockLogs.mapNotNull { extractName(it.message) }.distinct()
+        if (blockedNames.isNotEmpty()) {
+            summary.add("🚫 بلاک دیشب: بازیکنان «${blockedNames.joinToString("، ")}» بلاک شدند.")
+        } else if (blockLogs.isNotEmpty()) {
             summary.add("🚫 بلاک: اقداماتی در شب مسدود شد.")
         }
-        if (saveLogs.isNotEmpty()) {
+
+        val savedNames = saveLogs.mapNotNull { extractName(it.message) }.distinct()
+        if (savedNames.isNotEmpty()) {
+            summary.add("🩺 دکتر/نجات‌دهنده دیشب: بازیکنان «${savedNames.joinToString("، ")}» نجات پیدا کردند.")
+        } else if (saveLogs.isNotEmpty()) {
             summary.add("🩺 دکتر/نجات‌دهنده: اقدامات نجات در شب انجام شد.")
         }
 
@@ -1582,73 +1620,112 @@ fun PlayStageContent(
             border = BorderStroke(1.dp, BorderColor),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .background(
-                                color = if (phase == "Night") Color(0xFF1E1035) else Color(0xFF352B10),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = if (phase == "Night") "🌙" else "☀️",
-                            fontSize = 20.sp
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .background(
+                                    color = if (phase == "Night") Color(0xFF1E1035) else Color(0xFF352B10),
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (phase == "Night") "🌙" else "☀️",
+                                fontSize = 20.sp
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = if (phase == "Night") "فاز شب سناریو 🌙" else "فاز روز سناریو ☀️",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "تعداد کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "استعلام مفسر: $remainingInquiries از $totalInquiries 🔍",
+                                color = AccentGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
-                    Column {
+                    Button(
+                        onClick = {
+                            if (phase == "Night") {
+                                showInquiryPromptDialog = true
+                            } else {
+                                onTogglePhase()
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (phase == "Night") AccentGold else Color(0xFF1C1C2E),
+                            contentColor = if (phase == "Night") BackgroundDark else Color.White
+                        ),
+                        modifier = Modifier.height(38.dp)
+                    ) {
                         Text(
-                            text = if (phase == "Night") "فاز شب سناریو 🌙" else "فاز روز سناریو ☀️",
+                            text = if (phase == "Night") "طلوع آفتاب (شروع روز) ☀️" else "غروب آفتاب (شروع شب) 🌙",
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            text = "تعداد کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
-                            color = TextSecondary,
                             fontSize = 11.sp
-                        )
-                        Text(
-                            text = "استعلام مفسر: $remainingInquiries از $totalInquiries 🔍",
-                            color = AccentGold,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                Button(
-                    onClick = {
-                        if (phase == "Night") {
-                            showInquiryPromptDialog = true
-                        } else {
-                            onTogglePhase()
+                if (phase == "Day") {
+                    HorizontalDivider(color = BorderColor.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 4.dp))
+                    Button(
+                        onClick = { showDayStatsDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E3A5F),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("day_stats_button")
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = AccentGold
+                            )
+                            Text(
+                                text = "📊 آمار زنده و کشته‌های جناح‌ها (روز)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color.White
+                            )
                         }
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (phase == "Night") AccentGold else Color(0xFF1C1C2E),
-                        contentColor = if (phase == "Night") BackgroundDark else Color.White
-                    ),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Text(
-                        text = if (phase == "Night") "طلوع آفتاب (شروع روز) ☀️" else "غروب آفتاب (شروع شب) 🌙",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
+                    }
                 }
             }
         }
@@ -1894,7 +1971,7 @@ fun PlayStageContent(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "🔍 استعلام وضعیت طلوع آفتاب",
+                        text = "🔍 استعلام وضعیت بازی (Inquiry)",
                         fontWeight = FontWeight.Bold,
                         color = AccentGold,
                         fontSize = 16.sp,
@@ -1902,7 +1979,7 @@ fun PlayStageContent(
                     )
 
                     Text(
-                        text = "آیا مایلید از یک استعلام (Inquiry) برای طلوع امروز استفاده کنید تا وقایع دیشب به طور کامل برای شما نمایش داده شود؟",
+                        text = "آیا مایلید از یک استعلام (Inquiry) استفاده کنید تا آمار دقیق کشته‌شدگان هر جناح تا این لحظه نمایش داده شود؟",
                         color = Color.White,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -1961,7 +2038,6 @@ fun PlayStageContent(
                             onClick = {
                                 if (remainingInquiries > 0) {
                                     onDecrementInquiry()
-                                    nightReportContents = generateNightSummary(logs, players)
                                     showNightReportDialog = true
                                     showInquiryPromptDialog = false
                                 }
@@ -2002,6 +2078,17 @@ fun PlayStageContent(
 
     // 2.1 Night Report Summary Dialog
     if (showNightReportDialog) {
+        val eliminatedPlayers = remember(players) { players.filter { it.isSelected && !it.isAlive } }
+        val mafiaKilledCount = remember(eliminatedPlayers) {
+            eliminatedPlayers.count { it.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true }
+        }
+        val citizenKilledCount = remember(eliminatedPlayers) {
+            eliminatedPlayers.count { it.assignedRoleTeam?.equals("Citizen", ignoreCase = true) == true }
+        }
+        val independentKilledCount = remember(eliminatedPlayers) {
+            eliminatedPlayers.count { it.assignedRoleTeam?.equals("Independent", ignoreCase = true) == true }
+        }
+
         Dialog(
             onDismissRequest = { showNightReportDialog = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -2009,60 +2096,110 @@ fun PlayStageContent(
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                 border = BorderStroke(1.dp, BorderColor),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f).padding(16.dp)
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp).fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "📰 گزارش متمرکز وقایع شب گذشته",
-                            fontWeight = FontWeight.Bold,
-                            color = AccentGold,
-                            fontSize = 17.sp,
-                            textAlign = TextAlign.Center
-                        )
+                    Text(
+                        text = "🔍 نتیجه استعلام وضعیت (Inquiry Result)",
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGold,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
 
-                        if (nightReportContents.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF161624), RoundedCornerShape(8.dp))
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
+                    Text(
+                        text = "آمار دقیق اعضای کشته‌شده و حذف‌شده هر جناح از ابتدای بازی تا این لحظه به شرح زیر است:",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+
+                    // Statistical Display Card (using exact requested Persian format)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141424)),
+                        border = BorderStroke(1.dp, BorderColor),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Mafia Stats
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("آرامش کامل! هیچ اتفاق خاصی در شب رخ نداد 🕊️", color = Color.Gray, fontSize = 13.sp)
+                                Text(
+                                    text = "تعداد کشته های مافیا تا الان:",
+                                    color = Color(0xFFFF5252),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = mafiaKilledCount.toString(),
+                                    color = Color(0xFFFF5252),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
                             }
-                        } else {
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxWidth()
+
+                            HorizontalDivider(color = BorderColor.copy(alpha = 0.5f))
+
+                            // Citizen Stats
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                items(nightReportContents) { log ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFF1E1420), RoundedCornerShape(10.dp))
-                                            .border(1.dp, Color(0xFF3B2F3D), RoundedCornerShape(10.dp))
-                                            .padding(14.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(text = log, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
-                                    }
-                                }
+                                Text(
+                                    text = "تعداد کشته های شهروند تا الان:",
+                                    color = Color(0xFF42A5F5),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = citizenKilledCount.toString(),
+                                    color = Color(0xFF42A5F5),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+
+                            HorizontalDivider(color = BorderColor.copy(alpha = 0.5f))
+
+                            // Independent Stats
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "تعداد کشته های مستقل تا الان:",
+                                    color = Color(0xFFAB47BC),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = independentKilledCount.toString(),
+                                    color = Color(0xFFAB47BC),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
                         onClick = {
@@ -2070,9 +2207,15 @@ fun PlayStageContent(
                             onTogglePhase() // Transition to Day phase!
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentCitizen),
-                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
-                        Text("صحه بر وقایع و شروع روز روشن ☀️", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = BackgroundDark)
+                        Text(
+                            text = "تایید میشود ☀️",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = BackgroundDark
+                        )
                     }
                 }
             }
@@ -2298,6 +2441,13 @@ fun PlayStageContent(
                 }
             }
         }
+    }
+
+    if (showDayStatsDialog) {
+        DayStatsDialog(
+            players = players,
+            onDismissRequest = { showDayStatsDialog = false }
+        )
     }
 }
 
@@ -4218,6 +4368,13 @@ fun GameHistoryDialog(
 
                                         if (isExpanded) {
                                             Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "🎤 نام گرداننده/خدا: ${prevGame.moderatorName.ifBlank { "ثبت نشده" }}",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
                                             Text("📝 خلاصه‌ی گزارشات بازی و وضعیت نهایی بازیکنان در پایان بازی:", color = AccentGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
                                             Spacer(modifier = Modifier.height(8.dp))
@@ -4250,6 +4407,289 @@ fun GameHistoryDialog(
                     modifier = Modifier.fillMaxWidth().height(45.dp)
                 ) {
                     Text("بستن تاریخچه", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ModeratorNamePromptDialog(
+    initialValue: String = "",
+    onConfirm: (String) -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    var textState by remember { mutableStateOf(initialValue) }
+    var isError by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = BorderStroke(1.dp, BorderColor),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "🎤 نام گرداننده / خدا",
+                    fontWeight = FontWeight.Bold,
+                    color = AccentGold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "لطفاً نام گرداننده (خدا) بازی را برای این دور وارد نمایید تا در تاریخچه بازی ثبت گردد.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                OutlinedTextField(
+                    value = textState,
+                    onValueChange = {
+                        textState = it
+                        if (it.trim().isNotEmpty()) {
+                            isError = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("moderator_name_input"),
+                    label = { Text("نام گرداننده/خدا") },
+                    placeholder = { Text("مثال: امیرحسین") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF161624),
+                        unfocusedContainerColor = Color(0xFF161624),
+                        disabledContainerColor = Color(0xFF161624),
+                        focusedBorderColor = AccentGold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = AccentGold,
+                        unfocusedLabelColor = Color.Gray
+                    ),
+                    isError = isError,
+                    supportingText = if (isError) {
+                        { Text("نام گرداننده اجباری است!", color = Color(0xFFFF5252)) }
+                    } else null
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (textState.trim().isBlank()) {
+                                isError = true
+                            } else {
+                                onConfirm(textState.trim())
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentCitizen,
+                            contentColor = BackgroundDark
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("confirm_moderator_name_button")
+                    ) {
+                        Text(
+                            text = "شروع بازی 🃏",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    Button(
+                        onClick = onDismissRequest,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent,
+                            contentColor = Color.LightGray
+                        ),
+                        border = BorderStroke(1.dp, BorderColor),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    ) {
+                        Text(
+                            text = "انصراف",
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DayStatsDialog(
+    players: List<PlayerEntity>,
+    onDismissRequest: () -> Unit
+) {
+    val activePlayers = remember(players) { players.filter { it.isSelected } }
+
+    val totalCitizens = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Citizen" } }
+    val aliveCitizens = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Citizen" && it.isAlive } }
+    val deadCitizens = remember(activePlayers) { totalCitizens - aliveCitizens }
+
+    val totalMafia = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Mafia" } }
+    val aliveMafia = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Mafia" && it.isAlive } }
+    val deadMafia = remember(activePlayers) { totalMafia - aliveMafia }
+
+    val totalIndependents = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Independent" } }
+    val aliveIndependents = remember(activePlayers) { activePlayers.count { it.assignedRoleTeam == "Independent" && it.isAlive } }
+    val deadIndependents = remember(activePlayers) { totalIndependents - aliveIndependents }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = BorderStroke(1.dp, BorderColor),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "📊 آمار زنده‌ها و کشته‌های جناح‌ها",
+                    fontWeight = FontWeight.Bold,
+                    color = AccentGold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "لیست آمار تفکیکی بازیکنان فعال این سناریو به صورت زیر است:",
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Citizen Row
+                    StatRow(
+                        title = "🕊️ جناح شهروندان",
+                        aliveCount = aliveCitizens,
+                        deadCount = deadCitizens,
+                        totalCount = totalCitizens,
+                        color = AccentCitizen
+                    )
+
+                    // Mafia Row
+                    StatRow(
+                        title = "🕶️ جناح مافیا",
+                        aliveCount = aliveMafia,
+                        deadCount = deadMafia,
+                        totalCount = totalMafia,
+                        color = AccentCrimson
+                    )
+
+                    // Independent Row
+                    StatRow(
+                        title = "🎭 جناح مستقل",
+                        aliveCount = aliveIndependents,
+                        deadCount = deadIndependents,
+                        totalCount = totalIndependents,
+                        color = AccentGold
+                    )
+                }
+
+                Button(
+                    onClick = onDismissRequest,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2E3F)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text(
+                        text = "بستن آمار",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatRow(
+    title: String,
+    aliveCount: Int,
+    deadCount: Int,
+    totalCount: Int,
+    color: Color
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF161624)),
+        border = BorderStroke(1.dp, BorderColor),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "کل: $totalCount نفر",
+                    fontSize = 11.sp,
+                    color = Color.LightGray
+                )
+            }
+
+            HorizontalDivider(color = BorderColor.copy(alpha = 0.2f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("✅ زنده:", fontSize = 11.sp, color = Color.Gray)
+                    Text("$aliveCount نفر", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("💀 کشته:", fontSize = 11.sp, color = Color.Gray)
+                    Text("$deadCount نفر", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentCrimson)
                 }
             }
         }

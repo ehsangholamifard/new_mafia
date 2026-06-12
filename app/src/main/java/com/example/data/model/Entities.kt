@@ -55,7 +55,8 @@ data class GameHistoryEntity(
     val winnerTeam: String,
     val reason: String,
     val playersJson: String, // Serialize the final state of players
-    val logsJson: String // Serialize the final list of logs
+    val logsJson: String, // Serialize the final list of logs
+    val moderatorName: String = ""
 )
 
 @Serializable

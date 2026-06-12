@@ -56,6 +56,14 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _gameStage = MutableStateFlow("SETUP")
     val gameStage: StateFlow<String> = _gameStage.asStateFlow()
 
+    // Moderator Name state
+    private val _moderatorName = MutableStateFlow("")
+    val moderatorName: StateFlow<String> = _moderatorName.asStateFlow()
+
+    fun setModeratorName(name: String) {
+        _moderatorName.value = name.trim()
+    }
+
     // Phase: "Day" / "Night" (used during "PLAY" stage)
     private val _gamePhase = MutableStateFlow("Night")
     val gamePhase: StateFlow<String> = _gamePhase.asStateFlow()
@@ -350,6 +358,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
             repository.clearLogs()
             repository.addLog("--- شروع بازی مافیا گاد 🎭 ---")
+            if (_moderatorName.value.isNotBlank()) {
+                repository.addLog("🎤 گرداننده (خدا) بازی: ${_moderatorName.value}")
+            }
 
             // Distribute
             val updatedPlayers = chosenPlayers.mapIndexed { index, player ->
@@ -644,7 +655,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 winnerTeam = winnerTeam,
                 reason = reason,
                 playersJson = playersJson,
-                logsJson = logsJson
+                logsJson = logsJson,
+                moderatorName = _moderatorName.value
             )
             repository.insertGameHistory(historyEntry)
         }
