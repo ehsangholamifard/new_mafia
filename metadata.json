@@ -1,0 +1,6 @@
+{
+  "name": "Mafia God",
+  "description": "A professional and elegant local tool to manage Mafia games, distribute random secret roles via dynamic interactive cards, and track live/killed player states.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

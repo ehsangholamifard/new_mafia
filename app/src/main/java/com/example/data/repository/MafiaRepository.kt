@@ -1,0 +1,130 @@
+package com.example.data.repository
+
+import com.example.data.dao.MafiaDao
+import com.example.data.model.PlayerEntity
+import com.example.data.model.RoleEntity
+import com.example.data.model.GameLogEntity
+import com.example.data.model.GameHistoryEntity
+import kotlinx.coroutines.flow.Flow
+
+class MafiaRepository(private val mafiaDao: MafiaDao) {
+
+    val allPlayers: Flow<List<PlayerEntity>> = mafiaDao.getAllPlayersFlow()
+    val allRoles: Flow<List<RoleEntity>> = mafiaDao.getAllRolesFlow()
+    val allLogs: Flow<List<GameLogEntity>> = mafiaDao.getAllLogsFlow()
+    val allGameHistory: Flow<List<GameHistoryEntity>> = mafiaDao.getAllGameHistoryFlow()
+
+    suspend fun getAllPlayersList() = mafiaDao.getAllPlayersList()
+    suspend fun getPlayerById(id: Int) = mafiaDao.getPlayerById(id)
+    suspend fun insertPlayer(player: PlayerEntity) = mafiaDao.insertPlayer(player)
+    suspend fun insertPlayers(players: List<PlayerEntity>) = mafiaDao.insertPlayers(players)
+    suspend fun updatePlayer(player: PlayerEntity) = mafiaDao.updatePlayer(player)
+    suspend fun deletePlayer(player: PlayerEntity) = mafiaDao.deletePlayer(player)
+    suspend fun deleteAllPlayers() = mafiaDao.deleteAllPlayers()
+
+    suspend fun getAllRolesList() = mafiaDao.getAllRolesList()
+    suspend fun insertRole(role: RoleEntity) = mafiaDao.insertRole(role)
+    suspend fun insertRoles(roles: List<RoleEntity>) = mafiaDao.insertRoles(roles)
+    suspend fun updateRole(role: RoleEntity) = mafiaDao.updateRole(role)
+    suspend fun deleteRole(role: RoleEntity) = mafiaDao.deleteRole(role)
+    suspend fun deleteAllRoles() = mafiaDao.deleteAllRoles()
+
+    suspend fun addLog(message: String, phase: String = "Day") {
+        mafiaDao.insertLog(GameLogEntity(message = message, phase = phase))
+    }
+    suspend fun clearLogs() = mafiaDao.deleteAllLogs()
+
+    suspend fun insertGameHistory(history: GameHistoryEntity) = mafiaDao.insertGameHistory(history)
+    suspend fun deleteGameHistory(history: GameHistoryEntity) = mafiaDao.deleteGameHistory(history)
+
+    suspend fun seedDefaultRolesIfNeeded() {
+        val existing = mafiaDao.getAllRolesList()
+        if (existing.isEmpty()) {
+            val defaults = listOf(
+                RoleEntity(
+                    name = "کارآگاه 🔍",
+                    description = "استعلام زنده بودن و مشخص کردن هویت بازیکنان در شب (همکار شهروندان)",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"استعلام وضعیت 🔍","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "دکتر 🩺",
+                    description = "نجات دادن یکی از شهروندان یا خودش از تیر شلیک شده مافیا",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"شفا / نجات 🩺","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "حرفه‌ای 🔫",
+                    description = "تیرانداز شهروندان. اگر به مافیا شلیک کند او کشته می‌شود، وگرنه خودش حذف می‌شود",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"شلیک شبانه 🔫","totalCount":2,"remainingCount":2}]"""
+                ),
+                RoleEntity(
+                    name = "تفنگدار 🪖",
+                    description = "واگذاری تفنگ جنگی یا مشقی به بازیکنان در شب برای استفاده در روز بعد",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"تفنگ جنگی ⚔️","totalCount":2,"remainingCount":2},{"name":"تفنگ مشقی 🔫","totalCount":2,"remainingCount":2}]"""
+                ),
+                RoleEntity(
+                    name = "زره‌پوش 🛡️",
+                    description = "در شب شلیک مافیا به او کارساز نیست و در روز نیز با رای مستقیم بیرون نمی‌رود",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"محافظ زره 🛡️","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
+                    name = "جان‌سخت 💪",
+                    description = "سر سخت شهروندان که شب اول با تیر مافیا نمی‌میرد و به تعداد ۲ بار استعلام کشته‌شدگان شب را می‌گیرد",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"استعلام کشته‌شدگان شب 📰","totalCount":2,"remainingCount":2}]"""
+                ),
+                RoleEntity(
+                    name = "شهروند ساده 🕊️",
+                    description = "عضو معمولی ارتش شهروندان با قدرت تصمیم‌گیری، نطق و رأی‌دهی بالا",
+                    team = "Citizen"
+                ),
+                RoleEntity(
+                    name = "رئیس مافیا (پدرخوانده) 👑",
+                    description = "رهبر گروه مافیا که استعلام او برای کارآگاه همیشه منفی (شهروند) است و فرمان شلیک شب را صادر میکند",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"شلیک شبانه مافیا 💀","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "دکتر لکتور 💊",
+                    description = "پزشک تیم مافیا که اعضای مافیا را در شب شفا داده و محافظت می‌کند",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"شفا‌یار مافیا 💊","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "مذاکره‌کننده 🤝",
+                    description = "در صورت حذف یکی از یاران مافیا، می‌تواند با یک شهروند ساده مذاکره کند تا او هم‌تیم مافیا شود",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"پیشنهاد مذاکره 🤝","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
+                    name = "تروریست 💣",
+                    description = "اگر با رأی شهروندان در روز اعدام شود، می‌تواند یکی از بازیکنان را با خود ترور و حذف کند",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"انفجار انتحاری 💣","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
+                    name = "مافیای ساده 👤",
+                    description = "یار معمولی تیم مافیا که به رهبر کمک می‌کند و در رای‌گیری‌ها تاثیرگذار است",
+                    team = "Mafia"
+                ),
+                RoleEntity(
+                    name = "هزارچهره 🎭",
+                    description = "شخص مستقل بازی که نقش هر کس که حذف می‌شود را تا شب بعد تصاحب می‌کند",
+                    team = "Independent",
+                    capabilitiesJson = """[{"name":"تقلید نقش 🎭","totalCount":3,"remainingCount":3}]"""
+                ),
+                RoleEntity(
+                    name = "نوستراداموس 🔮",
+                    description = "شخص مستقلی که در ابتدای بازی تعداد و شانس برد مافیا یا شهروند را پیش‌بینی می‌کند",
+                    team = "Independent",
+                    capabilitiesJson = """[{"name":"رؤیت آینده 🔮","totalCount":1,"remainingCount":1}]"""
+                )
+            )
+            mafiaDao.insertRoles(defaults)
+        }
+    }
+}

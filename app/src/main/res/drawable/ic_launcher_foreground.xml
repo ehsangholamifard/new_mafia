@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle Golden-Glow Diamond/Square Badge on the back to tie it together -->
+    <path
+        android:fillColor="#0AFFFFFF"
+        android:strokeColor="#1AFFD700"
+        android:strokeWidth="1.5"
+        android:pathData="M 54,14 L 94,54 L 54,94 L 14,54 Z" />
+
+    <!-- Sleek Suit Jacket / Tuxedo Silhouette -->
+    <!-- Colored with a premium dark night-blue matching the game theme -->
+    <path
+        android:fillColor="#222234"
+        android:pathData="M 24,84 L 12,96 L 12,108 L 96,108 L 96,96 L 84,84 Z" />
+
+    <!-- Tuxedo Collar Lapels -->
+    <path
+        android:fillColor="#2C2C3E"
+        android:pathData="M 32,84 L 54,108 L 76,84 L 68,84 L 54,98 L 40,84 Z" />
+
+    <!-- White Shirt V-Shape -->
+    <path
+        android:fillColor="#ECEFF1"
+        android:pathData="M 44,84 L 54,96 L 64,84 Z" />
+
+    <!-- Royal Crimson Red Necktie -->
+    <path
+        android:fillColor="#EF5350"
+        android:pathData="M 51,85 L 57,85 L 59,98 L 54,103 L 49,98 Z" />
+
+    <!-- Luxury Gold Lapel Pins / Highlights -->
+    <path
+        android:fillColor="#FBC02D"
+        android:pathData="M 33,88 Q 30,95 24,96 L 25,92 Q 29,91 32,85 Z" />
+    <path
+        android:fillColor="#FBC02D"
+        android:pathData="M 75,88 Q 78,95 84,96 L 83,92 Q 79,91 76,85 Z" />
+
+    <!-- Majestic Mafia Boss Fedora Hat (Crown) -->
+    <!-- Smooth curves building a gorgeous fedora hat crease -->
+    <path
+        android:fillColor="#1B1B2C"
+        android:pathData="M 34,42 C 34,18 43,18 48,22 C 54,25 54,25 60,22 C 65,18 74,18 74,42 Z" />
+
+    <!-- Fedora Ribbon (Crimson Accent) -->
+    <path
+        android:fillColor="#EF5350"
+        android:pathData="M 33,40 L 75,40 C 75,40 74,45 74,45 L 34,45 C 34,45 33,40 33,40 Z" />
+
+    <!-- Fedora Brim (Shining Gold Curve) -->
+    <path
+        android:fillColor="#FBC02D"
+        android:pathData="M 16,45 C 34,42 74,42 92,45 C 95,46 95,48 92,49 C 74,51 34,51 16,49 C 13,48 13,46 16,45 Z" />
+
+    <!-- Mysterious Glowing Glasses (God-Eye Symbolism) -->
+    <!-- Gold frames with bright white eyes -->
+    <path
+        android:fillColor="#FFEB3B"
+        android:strokeColor="#FBC02D"
+        android:strokeWidth="1.5"
+        android:pathData="M 35,56 C 35,53 47,53 47,56 C 47,60 35,60 35,56 Z M 61,56 C 61,53 73,53 73,56 C 73,60 61,60 61,56 Z" />
+
+    <path
+        android:strokeColor="#FBC02D"
+        android:strokeWidth="2"
+        android:pathData="M 47,56 L 61,56" />
+
+    <!-- Sleek Mustache (Classic Godfather Element) -->
+    <path
+        android:fillColor="#222234"
+        android:pathData="M 44,68 C 48,66 50,65 54,65 C 58,65 60,66 64,68 C 60,70 48,70 44,68 Z" />
+
+</vector>
