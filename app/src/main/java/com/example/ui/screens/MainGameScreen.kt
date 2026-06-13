@@ -197,7 +197,18 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             phase = phase,
                             logs = logs,
                             lastMoveCards = lastMoveCards,
-                            onTogglePhase = { viewModel.toggleGamePhase() },
+                            onTogglePhase = {
+                                if (phase == "Day") {
+                                    triggerConfirmation(
+                                        "پایان فاز روز 🌙",
+                                        "آیا مطمئن هستید که می‌خواهید روز را پایان دهید و به فاز شب بروید؟"
+                                    ) {
+                                        viewModel.toggleGamePhase()
+                                    }
+                                } else {
+                                    viewModel.toggleGamePhase()
+                                }
+                            },
                             onPlayerClick = { viewModel.selectPlayerForSettings(it) },
                             onRegisterEvent = { id, type ->
                                 val p = players.find { it.id == id }
@@ -383,6 +394,16 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                                 "احیای بازیکن از گورستان 🟢",
                                 "آیا مایل به احیا و زنده کردن مجدد بازیکن «$pName» [$reasonStr] هستید؟"
                             ) { viewModel.revivePlayerWithReason(id, type) }
+                        },
+                        players = players,
+                        onProfessionalShoot = { profId, targetId ->
+                            viewModel.professionalShoot(profId, targetId)
+                        },
+                        onProfessionalSlaughter = { profId, targetId ->
+                            viewModel.professionalSlaughter(profId, targetId)
+                        },
+                        onDoctorHeal = { docId, targetId ->
+                            viewModel.doctorHeal(docId, targetId)
                         }
                     )
                 }
@@ -2927,7 +2948,11 @@ fun PlayerSettingsDialog(
     onUpdateVotes: (Int, Int) -> Unit,
     onUpdateWarnings: (Int, Int) -> Unit,
     onEliminateWithReason: (Int, String) -> Unit,
-    onReviveWithReason: (Int, String) -> Unit
+    onReviveWithReason: (Int, String) -> Unit,
+    players: List<PlayerEntity> = emptyList(),
+    onProfessionalShoot: (Int, Int) -> Unit = { _, _ -> },
+    onProfessionalSlaughter: (Int, Int) -> Unit = { _, _ -> },
+    onDoctorHeal: (Int, Int) -> Unit = { _, _ -> }
 ) {
     var noteText by remember { mutableStateOf(player.note) }
     var userSelectedCapabilityCount by remember { mutableStateOf("1") }
@@ -3015,58 +3040,375 @@ fun PlayerSettingsDialog(
 
                 // Section 2: Interactive capability trigger (ONLY in Night phase)
                 if (phase == "Night") {
-                    item {
-                        Text(text = "استفاده از قابلیت‌های نقش بازیکن (مخصوص فاز شب):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
+                    if (player.assignedRoleName?.contains("دکتر") == true && player.assignedRoleName?.contains("لکتور") == false) {
+                        item {
+                            Text(
+                                text = "🩺 مدیریت نجات و شفای پزشک:",
+                                fontWeight = FontWeight.Bold,
+                                color = AccentGold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            var isTargetMenuExpanded by remember { mutableStateOf(false) }
+                            var targetPlayerId by remember { mutableStateOf<Int?>(null) }
+                            val alivePlayers = remember(players) {
+                                players.filter { it.isSelected && it.isAlive }
+                            }
+                            val selectedTarget = remember(targetPlayerId, players) {
+                                players.find { it.id == targetPlayerId }
+                            }
+                            
+                            Text(
+                                text = "تعداد خود-نجاتی‌های پزشک: ${player.doctorSelfSavesCount} از ۲",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
 
-                        if (caps.isEmpty()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF1F1F2F), RoundedCornerShape(8.dp))
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
+                                    .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                    .clickable { isTargetMenuExpanded = true }
+                                    .padding(12.dp)
                             ) {
-                                Text(text = "این نقش در حال حاضر هیچ قابلیتی ندارد🕊️", color = Color.Gray, fontSize = 11.sp)
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                caps.forEach { cap ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFF191928), RoundedCornerShape(8.dp))
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column {
-                                            Text(text = cap.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text(text = "تعداد مجاز باقی مانده: ${cap.remainingCount} از ${cap.totalCount}", color = TextSecondary, fontSize = 10.sp)
-                                        }
-
-                                        val context = androidx.compose.ui.platform.LocalContext.current
-                                        Button(
-                                            onClick = { 
-                                                if (player.isBlocked) {
-                                                    android.widget.Toast.makeText(context, "این بازیکن مسدود/بلاک است و استفاده از قابلیت انجام نمی‌شود!", android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    onUseCapability(player.id, cap.name) 
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = selectedTarget?.name ?: "انتخاب بازیکن برای نجات... 🩺",
+                                        color = if (selectedTarget != null) Color.White else Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = AccentGold
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = isTargetMenuExpanded,
+                                    onDismissRequest = { isTargetMenuExpanded = false },
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(SurfaceDark)
+                                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                ) {
+                                    if (alivePlayers.isEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text("هیچ بازیکن زنده معتبری یافت نشد", color = Color.Gray, fontSize = 11.sp) },
+                                            onClick = { isTargetMenuExpanded = false }
+                                        )
+                                    } else {
+                                        alivePlayers.forEach { aliveP ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    val subLabel = if (aliveP.id == player.id) " (خود پزشک)" else ""
+                                                    Text(
+                                                        text = "${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})$subLabel",
+                                                        color = Color.White,
+                                                        fontSize = 11.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    targetPlayerId = aliveP.id
+                                                    isTargetMenuExpanded = false
                                                 }
-                                            },
-                                            enabled = cap.remainingCount > 0,
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (player.isBlocked) AccentCrimson else AccentGold,
-                                                contentColor = BackgroundDark,
-                                                disabledContainerColor = Color(0xFF2C2C35)
-                                            ),
-                                            modifier = Modifier.height(30.dp),
-                                            contentPadding = PaddingValues(horizontal = 10.dp)
-                                        ) {
-                                            Text(if (player.isBlocked) "مسدود 🚫" else "استفاده ⚡", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            )
                                         }
                                     }
                                 }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            var showDoctorConfirmDialog by remember { mutableStateOf(false) }
+                            var showDoctorWarningDialog by remember { mutableStateOf(false) }
+
+                            val isActionEnabled = selectedTarget != null && !player.isBlocked
+
+                            Button(
+                                onClick = {
+                                    if (selectedTarget != null) {
+                                        if (selectedTarget.id == player.id && player.doctorSelfSavesCount >= 2) {
+                                            showDoctorWarningDialog = true
+                                        } else {
+                                            showDoctorConfirmDialog = true
+                                        }
+                                    }
+                                },
+                                enabled = isActionEnabled,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AccentGold,
+                                    contentColor = BackgroundDark,
+                                    disabledContainerColor = Color(0xFF2C2C35)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("ثبت نجات/شفا 🩺", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (showDoctorWarningDialog) {
+                                StyledConfirmationDialog(
+                                    title = "خطای خود-نجاتی ⚠️",
+                                    message = "دکتر قبلاً ۲ بار خود را نجات داده است و دیگر نمیتواند.",
+                                    onConfirm = {
+                                        showDoctorWarningDialog = false
+                                    },
+                                    onDismiss = {
+                                        showDoctorWarningDialog = false
+                                    }
+                                )
+                            }
+
+                            if (showDoctorConfirmDialog && selectedTarget != null) {
+                                StyledConfirmationDialog(
+                                    title = "تأیید نجات پزشک 🩺",
+                                    message = "آیا مطمئن هستید که دکتر این بازیکن را نجات دهد؟",
+                                    onConfirm = {
+                                        onDoctorHeal(player.id, selectedTarget.id)
+                                        targetPlayerId = null
+                                        showDoctorConfirmDialog = false
+                                        handleDismiss()
+                                    },
+                                    onDismiss = {
+                                        showDoctorConfirmDialog = false
+                                    }
+                                )
+                            }
+                        }
+                    } else if (player.assignedRoleName?.contains("حرفه") == true) {
+                        item {
+                            Text(
+                                text = "🎯 مدیریت شلیک و سلاخی حرفه‌ای:",
+                                fontWeight = FontWeight.Bold,
+                                color = AccentGold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            var isTargetMenuExpanded by remember { mutableStateOf(false) }
+                            var targetPlayerId by remember { mutableStateOf<Int?>(null) }
+                            val alivePlayers = remember(players) {
+                                players.filter { it.isSelected && it.isAlive && it.id != player.id }
+                            }
+                            val selectedTarget = remember(targetPlayerId, players) {
+                                players.find { it.id == targetPlayerId }
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                    .clickable { isTargetMenuExpanded = true }
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = selectedTarget?.name ?: "انتخاب بازیکن هدف... 👥",
+                                        color = if (selectedTarget != null) Color.White else Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = AccentGold
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = isTargetMenuExpanded,
+                                    onDismissRequest = { isTargetMenuExpanded = false },
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(SurfaceDark)
+                                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                ) {
+                                    if (alivePlayers.isEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text("هیچ بازیکن زنده معتبری یافت نشد", color = Color.Gray, fontSize = 11.sp) },
+                                            onClick = { isTargetMenuExpanded = false }
+                                        )
+                                    } else {
+                                        alivePlayers.forEach { aliveP ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = "${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})",
+                                                        color = Color.White,
+                                                        fontSize = 11.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    targetPlayerId = aliveP.id
+                                                    isTargetMenuExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                var showLocalConfirmDialog by remember { mutableStateOf(false) }
+                                var showShootConfirmDialog by remember { mutableStateOf(false) }
+                                
+                                val isActionEnabled = selectedTarget != null && !player.isBlocked
+
+                                Button(
+                                    onClick = {
+                                        if (selectedTarget != null) {
+                                            showShootConfirmDialog = true
+                                        }
+                                    },
+                                    enabled = isActionEnabled,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF19323F),
+                                        disabledContainerColor = Color(0xFF2C2C35)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("شلیک 🔫", color = if (isActionEnabled) Color.White else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                
+                                Button(
+                                    onClick = {
+                                        if (selectedTarget != null) {
+                                            showLocalConfirmDialog = true
+                                        }
+                                    },
+                                    enabled = isActionEnabled,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF5C101C),
+                                        disabledContainerColor = Color(0xFF2C2C35)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("سلاخی 🔪", color = if (isActionEnabled) Color.White else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                if (showShootConfirmDialog && selectedTarget != null) {
+                                    StyledConfirmationDialog(
+                                        title = "تأیید شلیک شبانه 🔫",
+                                        message = "آیا مطمئن هستید که حرفه‌ای به بازیکن «${selectedTarget.name}» شلیک کند؟",
+                                        onConfirm = {
+                                            onProfessionalShoot(player.id, selectedTarget.id)
+                                            targetPlayerId = null
+                                            showShootConfirmDialog = false
+                                            handleDismiss()
+                                        },
+                                        onDismiss = {
+                                            showShootConfirmDialog = false
+                                        }
+                                    )
+                                }
+
+                                if (showLocalConfirmDialog && selectedTarget != null) {
+                                    StyledConfirmationDialog(
+                                        title = "تأیید سلاخی شبانه 🩸",
+                                        message = "آیا نقش قربانی به درستی حدس زده شده و اون بازیکن سلاخی شود؟",
+                                        onConfirm = {
+                                            onProfessionalSlaughter(player.id, selectedTarget.id)
+                                            targetPlayerId = null
+                                            showLocalConfirmDialog = false
+                                            handleDismiss()
+                                        },
+                                        onDismiss = {
+                                            showLocalConfirmDialog = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        item {
+                            Text(text = "استفاده از قابلیت‌های نقش بازیکن (مخصوص فاز شب):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            var showGeneralCapabilityConfirmDialog by remember { mutableStateOf<String?>(null) }
+
+                            if (caps.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF1F1F2F), RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = "این نقش در حال حاضر هیچ قابلیتی ندارد🕊️", color = Color.Gray, fontSize = 11.sp)
+                                }
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    caps.forEach { cap ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(text = cap.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text(text = "تعداد مجاز باقی مانده: ${cap.remainingCount} از ${cap.totalCount}", color = TextSecondary, fontSize = 10.sp)
+                                            }
+
+                                            val context = androidx.compose.ui.platform.LocalContext.current
+                                            Button(
+                                                onClick = { 
+                                                    if (player.isBlocked) {
+                                                        android.widget.Toast.makeText(context, "این بازیکن مسدود/بلاک است و استفاده از قابلیت انجام نمی‌شود!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        showGeneralCapabilityConfirmDialog = cap.name
+                                                    }
+                                                },
+                                                enabled = cap.remainingCount > 0,
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (player.isBlocked) AccentCrimson else AccentGold,
+                                                    contentColor = BackgroundDark,
+                                                    disabledContainerColor = Color(0xFF2C2C35)
+                                                ),
+                                                modifier = Modifier.height(30.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                            ) {
+                                                Text(if (player.isBlocked) "مسدود 🚫" else "استفاده ⚡", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (showGeneralCapabilityConfirmDialog != null) {
+                                val capName = showGeneralCapabilityConfirmDialog!!
+                                StyledConfirmationDialog(
+                                    title = "تأیید استفاده از قابلیت ⚡",
+                                    message = "آیا مطمئن هستید که می‌خواهید قابلیت «$capName» را برای بازیکن «${player.name}» اعمال کنید؟",
+                                    onConfirm = {
+                                        onUseCapability(player.id, capName)
+                                        showGeneralCapabilityConfirmDialog = null
+                                    },
+                                    onDismiss = {
+                                        showGeneralCapabilityConfirmDialog = null
+                                    }
+                                )
                             }
                         }
                     }

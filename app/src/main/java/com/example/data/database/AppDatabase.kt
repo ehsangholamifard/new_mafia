@@ -14,7 +14,7 @@ import com.example.data.model.GameHistoryEntity
 
 @Database(
     entities = [PlayerEntity::class, RoleEntity::class, GameLogEntity::class, GameHistoryEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
