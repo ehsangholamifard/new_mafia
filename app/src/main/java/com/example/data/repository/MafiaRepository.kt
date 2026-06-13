@@ -122,6 +122,12 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     description = "شخص مستقلی که در ابتدای بازی تعداد و شانس برد مافیا یا شهروند را پیش‌بینی می‌کند",
                     team = "Independent",
                     capabilitiesJson = """[{"name":"رؤیت آینده 🔮","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
+                    name = "چرچیل 🎩",
+                    description = "شخص مستقل بازی با قابلیت سلاخی که پزشک بر روی بازیکنان سلاخی شده او اثری ندارد",
+                    team = "Independent",
+                    capabilitiesJson = """[{"name":"سلاخی شبانه ⚔️","totalCount":10,"remainingCount":10}]"""
                 )
             )
             mafiaDao.insertRoles(defaults)

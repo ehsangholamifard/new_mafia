@@ -207,6 +207,10 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                                         "ثبت قتل بازیکن 💀",
                                         "آیا مایل به ثبت شلیک/قتل برای بازیکن «$pName» در فاز شب هستید؟"
                                     ) { viewModel.registerNightEvent(id, type) }
+                                    "SLAUGHTER" -> triggerConfirmation(
+                                        "ثبت سلاخی بازیکن 🔪",
+                                        "آیا مایل به ثبت سلاخی برای بازیکن «$pName» در فاز شب هستید؟ (نجات دکتری روی این وضعیت بی اثر خواهد بود)"
+                                    ) { viewModel.registerNightEvent(id, type) }
                                     "MUTE" -> triggerConfirmation(
                                         "ثبت سکوت بازیکن 🔇",
                                         "آیا مایل به سایلنت کردن بازیکن «$pName» تا پایان روز بعد هستید؟"
@@ -1536,6 +1540,7 @@ fun PlayStageContent(
     var nightReportContents by remember { mutableStateOf<List<String>>(emptyList()) }
     var showInquiryPromptDialog by remember { mutableStateOf(false) }
     var showDayStatsDialog by remember { mutableStateOf(false) }
+    var showEndDayConfirmationDialog by remember { mutableStateOf(false) }
 
     // Helper to generate a smart structured night summary
     fun generateNightSummary(allLogs: List<GameLogEntity>, playersList: List<PlayerEntity>): List<String> {
@@ -1676,7 +1681,7 @@ fun PlayStageContent(
                             if (phase == "Night") {
                                 showInquiryPromptDialog = true
                             } else {
-                                onTogglePhase()
+                                showEndDayConfirmationDialog = true
                             }
                         },
                         shape = RoundedCornerShape(10.dp),
@@ -2449,6 +2454,92 @@ fun PlayStageContent(
             onDismissRequest = { showDayStatsDialog = false }
         )
     }
+
+    if (showEndDayConfirmationDialog) {
+        Dialog(
+            onDismissRequest = { showEndDayConfirmationDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.91f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🌙 انتقال به فاز شب",
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGold,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "آیا مطمئن هستید که میخواهید روز را پایان دهید و به فاز شب بروید؟",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Confirm/Yes Button
+                        Button(
+                            onClick = {
+                                showEndDayConfirmationDialog = false
+                                onTogglePhase()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentCrimson,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("confirm_end_day_button")
+                        ) {
+                            Text(
+                                text = "بله و خروج 🌙",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        // Cancel/No Button
+                        Button(
+                            onClick = { showEndDayConfirmationDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Transparent,
+                                contentColor = Color.LightGray
+                            ),
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("cancel_end_day_button")
+                        ) {
+                            Text(
+                                text = "انصراف ☀️",
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2533,13 +2624,19 @@ fun PlayerLiveCard(
                             else -> AccentGold
                         }
 
-                        Text(
-                            text = player.name,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDead) Color.Gray else Color.White,
-                            fontSize = 14.sp,
-                            textDecoration = if (isDead) TextDecoration.LineThrough else TextDecoration.None
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = player.name,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDead) Color.Gray else Color.White,
+                                fontSize = 14.sp,
+                                textDecoration = if (isDead) TextDecoration.LineThrough else TextDecoration.None
+                            )
+                            if (player.isSlaughtered) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("🩸🔪", fontSize = 14.sp)
+                            }
+                        }
                         
                         if (isNight && !isDead) {
                             Text(
@@ -2571,6 +2668,9 @@ fun PlayerLiveCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (player.isSlaughtered) {
+                        BadgeLabel(text = "سلاخی شده 🩸🔪", bgColor = Color(0xFF4A1015), txtColor = Color(0xFFFF5252))
+                    }
                     if (player.isBlocked) {
                         BadgeLabel(text = "مسدود 🚫", bgColor = Color(0xFF2A1F1F), txtColor = AccentCrimson)
                     }
@@ -2645,6 +2745,39 @@ fun PlayerLiveCard(
                         Text("💀 کشته", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
 
+                    // Check if there is an active slaughter-capable role in the game
+                    val hasSlaughterer = remember(players) {
+                        players.any { p ->
+                            p.isSelected && p.isAlive && p.assignedRoleName != null &&
+                            (p.assignedRoleName.contains("حرفه") || p.assignedRoleName.contains("پدرخوانده") || p.assignedRoleName.contains("چرچیل"))
+                        }
+                    }
+
+                    Button(
+                        onClick = { onRegisterEvent("SLAUGHTER") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasSlaughterer) Color(0xFF5C101C) else Color(0xFF261014)
+                        ),
+                        enabled = hasSlaughterer,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (hasSlaughterer) "🔪 سلاخی" else "🔒 سلاخی",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasSlaughterer) Color.White else Color.Gray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Button(
                         onClick = { onRegisterEvent("MUTE") },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F3A19)),
@@ -4384,7 +4517,8 @@ fun GameHistoryDialog(
                                                 try {
                                                     val players = Json.decodeFromString<List<PlayerEntity>>(prevGame.playersJson)
                                                     players.joinToString("\n") { 
-                                                        "${if (it.isAlive) "✅ زنده" else "💀 مرده"} | ${it.name} (${it.assignedRoleName ?: "بدون نقش"})" 
+                                                        val status = if (it.isSlaughtered) "🔪 سلاخی" else if (it.isAlive) "✅ زنده" else "💀 مرده"
+                                                        "$status | ${it.name} (${it.assignedRoleName ?: "بدون نقش"})" 
                                                     }
                                                 } catch (e: Exception) {
                                                     "خطا در بارگذاری لیست بازیکنان یا داده خراب است."

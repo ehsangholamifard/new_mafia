@@ -428,7 +428,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     repository.addLog("💀 بازیکن «${p.name}» در شب توسط [$killerRole] کشته و حذف شد.")
                 }
                 type == "SLAUGHTER" -> {
-                    val updated = p.copy(isAlive = false)
+                    val updated = p.copy(
+                        isAlive = false,
+                        isSlaughtered = true,
+                        isSaved = false,
+                        isBlocked = false,
+                        isMuted = false
+                    )
                     repository.updatePlayer(updated)
                     repository.addLog("🔪 بازیکن «${p.name}» سلاخی و از بازی حذف گردید.")
                 }
@@ -443,9 +449,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     repository.addLog("🚫 بازیکن «${p.name}» بسته شد (بلاک گردید).")
                 }
                 type == "SAVE" -> {
-                    val updated = p.copy(isSaved = true)
-                    repository.updatePlayer(updated)
-                    repository.addLog("🩺 بازیکن «${p.name}» نجات داده شد یا مورد شفا قرار گرفت.")
+                    if (p.isSlaughtered) {
+                        repository.addLog("⚠️ تلاش پزشک برای نجات «${p.name}» ناکام ماند (این بازیکن سلاخی شده است و نجات روی او بی‌اثر است).")
+                    } else {
+                        val updated = p.copy(isSaved = true)
+                        repository.updatePlayer(updated)
+                        repository.addLog("🩺 بازیکن «${p.name}» نجات داده شد یا مورد شفا قرار گرفت.")
+                    }
                 }
                 type == "INC_VOTE" -> {
                     val updated = p.copy(voteCount = p.voteCount + 1)
@@ -770,7 +780,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     hasUsedLastMoveCard = false,
                     note = "",
                     voteCount = 0,
-                    warningsCount = 0
+                    warningsCount = 0,
+                    isSlaughtered = false
                 )
             }
             repository.insertPlayers(restored)

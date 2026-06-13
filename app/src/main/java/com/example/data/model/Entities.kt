@@ -23,7 +23,8 @@ data class PlayerEntity(
     val note: String = "",
     val voteCount: Int = 0,
     val warningsCount: Int = 0,
-    val isKilledToday: Boolean = false
+    val isKilledToday: Boolean = false,
+    val isSlaughtered: Boolean = false
 )
 
 @Entity(tableName = "roles")
