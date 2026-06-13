@@ -78,6 +78,24 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     capabilitiesJson = """[{"name":"استعلام کشته‌شدگان شب 📰","totalCount":2,"remainingCount":2}]"""
                 ),
                 RoleEntity(
+                    name = "اوشن - ژنرال 🌊",
+                    description = "هر شب یک بازیکن زنده را انتخاب می‌کند. اگر او مافیا باشد، ژنرال کشته می‌شود (غیرقابل شفا توسط پزشک)، وگرنه هدف بیدار می‌شود تا ژنرال را شناسایی کند",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"تشخیص هویت اوشن 🌊","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "کنستانتین ⚡",
+                    description = "شخصیت جناح شهروند که یک بار در طول بازی می‌تواند یکی از بازیکنان از دست رفته یا اعدام شده را احیا کرده و زنده کند",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"احیای مردگان ⚡","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
+                    name = "همشهری کین 📰",
+                    description = "یک بار در شب یک بازیکن را انتخاب می‌کند. اگر او مافیا باشد، به عنوان مافیای شناسایی شده علامت‌گذاری می‌شود اما خود کین شب بعد قربانی می‌گردد",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"افشاگری کین 📰","totalCount":1,"remainingCount":1}]"""
+                ),
+                RoleEntity(
                     name = "شهروند ساده 🕊️",
                     description = "عضو معمولی ارتش شهروندان با قدرت تصمیم‌گیری، نطق و رأی‌دهی بالا",
                     team = "Citizen"
@@ -110,6 +128,12 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     name = "مافیای ساده 👤",
                     description = "یار معمولی تیم مافیا که به رهبر کمک می‌کند و در رای‌گیری‌ها تاثیرگذار است",
                     team = "Mafia"
+                ),
+                RoleEntity(
+                    name = "ماتادور 🧣",
+                    description = "عضو باسابقه مافیا که هر شب می‌تواند قابلیت‌های یکی از بازیکنان را مسدود کند تا او نتواند کاری انجام دهد",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"مسدود کردن نقش 🧣","totalCount":10,"remainingCount":10}]"""
                 ),
                 RoleEntity(
                     name = "هزارچهره 🎭",

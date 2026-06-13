@@ -27,7 +27,11 @@ data class PlayerEntity(
     val isSlaughtered: Boolean = false,
     val isHealedThisNight: Boolean = false,
     val isShotThisNight: Boolean = false,
-    val doctorSelfSavesCount: Int = 0
+    val isBlockedThisNight: Boolean = false,
+    val doctorSelfSavesCount: Int = 0,
+    val isRevealedMafia: Boolean = false,
+    val willDieNextNight: Boolean = false,
+    val isRevivedThisNight: Boolean = false
 )
 
 @Entity(tableName = "roles")

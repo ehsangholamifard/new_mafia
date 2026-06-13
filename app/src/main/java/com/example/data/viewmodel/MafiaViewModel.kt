@@ -11,6 +11,7 @@ import com.example.data.model.GameHistoryEntity
 import com.example.data.model.RoleCapability
 import com.example.data.repository.MafiaRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -768,9 +769,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             if (nextPhase == "Night") {
                 // If entering night, we reset temporary day metrics like votes, confirm unresolved day deaths, and reset daily disciplinary actions
                 val updated = players.value.map {
-                    val finalAlive = if (it.isKilledToday) false else it.isAlive
+                    var finalAlive = if (it.isKilledToday) false else it.isAlive
                     if (it.isKilledToday) {
                         repository.addLog("💀 مرگ بازیکن «${it.name}» در روز جاری به دلیل عدم ثبت نجات، نهایی شد.")
+                    }
+                    if (it.willDieNextNight && finalAlive) {
+                        finalAlive = false
+                        repository.addLog("💀 بازیکن «${it.name}» (${it.assignedRoleName ?: "همشهری کین"}) به علت استفاده از قابلیت خود (جان فدا) قربانی شد.")
                     }
                     it.copy(
                         voteCount = 0,
@@ -778,6 +783,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isHealedThisNight = false,
                         isShotThisNight = false,
                         isAlive = finalAlive,
+                        willDieNextNight = false, // Reset penalty flag as it is now executed
+                        isRevealedMafia = false, // Reset the night-revealed mafia status
+                        isRevivedThisNight = false, // Reset the night-revived status
                         isKilledToday = false,
                         isMuted = false, // Day ends, mute expires
                         isVoteRevoked = false // Day ends, vote restriction expires
@@ -788,7 +796,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 // If entering day, we reset night variables like block
                 val updated = players.value.map {
                     it.copy(
-                        isBlocked = false // Night ends, block expires
+                        isBlocked = false, // Night ends, block expires
+                        isBlockedThisNight = false // Reset Matador's night block
                     )
                 }
                 repository.insertPlayers(updated)
@@ -812,13 +821,17 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isSaved = false,
                     isHealedThisNight = false,
                     isShotThisNight = false,
+                    isBlockedThisNight = false,
                     doctorSelfSavesCount = 0,
                     capabilitiesJson = "",
                     hasUsedLastMoveCard = false,
                     note = "",
                     voteCount = 0,
                     warningsCount = 0,
-                    isSlaughtered = false
+                    isSlaughtered = false,
+                    isRevealedMafia = false,
+                    willDieNextNight = false,
+                    isRevivedThisNight = false
                 )
             }
             repository.insertPlayers(restored)
@@ -899,6 +912,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (prof.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (prof.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1011,6 +1029,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (prof.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (prof.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1067,6 +1090,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val doc = repository.getPlayerById(doctorId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (doc.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت پزشک «${doc.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (doc.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1158,6 +1186,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
 
+            if (gf.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (gf.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1225,6 +1258,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (gf.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (gf.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1272,6 +1310,205 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val refreshedGf = repository.getPlayerById(godfatherId)
             if (_selectedPlayerForSettings.value?.id == godfatherId) {
                 _selectedPlayerForSettings.value = refreshedGf
+            }
+        }
+    }
+
+    fun matadorBlock(matadorId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val matador = repository.getPlayerById(matadorId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            // Check remaining capability count first
+            if (matador.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(matador.capabilitiesJson)
+                    val blockCap = caps.find { it.name.contains("مسدود") }
+                    if (blockCap != null && blockCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: ماتادور دیگر مسدود‌سازی مجاز باقی‌مانده ندارد.")
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement Matador's capability count
+            if (matador.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(matador.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("مسدود") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedMatador = matador.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedMatador)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Apply direct block flag for this night
+            val updatedTarget = target.copy(isBlockedThisNight = true)
+            repository.updatePlayer(updatedTarget)
+            repository.addLog("🧣 ماتادور «${matador.name}» قابلیت‌های بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را امشب مسدود کرد.")
+
+            // Refresh selected player settings dialog state
+            if (_selectedPlayerForSettings.value?.id == matadorId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(matadorId)
+            }
+        }
+    }
+
+    fun generalCheck(generalId: Int, targetId: Int, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val general = repository.getPlayerById(generalId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (general.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت اوشن - ژنرال «${general.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Decrement General's remaining capability count
+            if (general.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(general.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("تشخیص") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedGen = general.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedGen)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            val isMafia = target.assignedRoleTeam == "Mafia"
+            if (isMafia) {
+                // Eliminate general immediately
+                val deadGen = general.copy(isAlive = false, isSaved = false)
+                repository.updatePlayer(deadGen)
+                repository.addLog("💀 بازیکن «${general.name}» (اوشن - ژنرال) به علت استعلام اشتباه روی بازیکن «${target.name}» (مافیا) حذف گردید.")
+                withContext(Dispatchers.Main) {
+                    onResult(true)
+                }
+            } else {
+                repository.addLog("🔍 بازیکن «${general.name}» (اوشن - ژنرال) بازیکن «${target.name}» را معارفه کرد. هدف شهروند یا مستقل است و او زنده می‌ماند.")
+                withContext(Dispatchers.Main) {
+                    onResult(false)
+                }
+            }
+
+            // Refresh selected player settings dialog state
+            if (_selectedPlayerForSettings.value?.id == generalId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(generalId)
+            }
+        }
+    }
+
+    fun constantineRevive(constantineId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val constantine = repository.getPlayerById(constantineId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (constantine.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت کنستانتین «${constantine.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Decrement Constantine's remaining capability count
+            if (constantine.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(constantine.capabilitiesJson)
+                    val reviveCap = caps.find { it.name.contains("احیا") }
+                    if (reviveCap != null && reviveCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: کنستانتین قبلاً از قابلیت احیاء خود استفاده کرده است.")
+                        return@launch
+                    }
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("احیا") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedConst = constantine.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedConst)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Revive execution: change state to isAlive = true and clear death status
+            val revivedTarget = target.copy(
+                isAlive = true,
+                isKilledToday = false,
+                isSlaughtered = false,
+                isShotThisNight = false,
+                isSaved = false,
+                isRevivedThisNight = true
+            )
+            repository.updatePlayer(revivedTarget)
+            repository.addLog("⚡ کنستانتین «${constantine.name}» با موفقیت بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را احیا کرد و به بازی بازگرداند.")
+
+            // Refresh selected player settings dialog state
+            if (_selectedPlayerForSettings.value?.id == constantineId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(constantineId)
+            }
+        }
+    }
+
+    fun citizenKaneReveal(kaneId: Int, targetId: Int, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var kane = repository.getPlayerById(kaneId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (kane.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت همشهری کین «${kane.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            if (kane.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(kane.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("افشاگری") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    kane = kane.copy(capabilitiesJson = updatedJson)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Apply sacrifice penalty for next night
+            kane = kane.copy(willDieNextNight = true)
+            repository.updatePlayer(kane)
+
+            val isMafia = target.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true
+            if (isMafia) {
+                val updatedTarget = target.copy(isRevealedMafia = true)
+                repository.updatePlayer(updatedTarget)
+                repository.addLog("🔍 همشهری کین با موفقیت بازیکن «${target.name}» را به عنوان مافیا شناسایی کرد. (قربانی کین در شب بعد فعال شد)")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult(true)
+                }
+            } else {
+                repository.addLog("🔍 همشهری کین بازیکن «${target.name}» را استعلام کرد اما او مافیا نبود. (قربانی کین در شب بعد فعال شد)")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult(false)
+                }
+            }
+
+            if (_selectedPlayerForSettings.value?.id == kaneId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(kaneId)
             }
         }
     }
