@@ -28,6 +28,7 @@ data class PlayerEntity(
     val isHealedThisNight: Boolean = false,
     val isShotThisNight: Boolean = false,
     val isBlockedThisNight: Boolean = false,
+    val isInsuredThisNight: Boolean = false,
     val doctorSelfSavesCount: Int = 0,
     val isRevealedMafia: Boolean = false,
     val willDieNextNight: Boolean = false,
@@ -46,7 +47,8 @@ data class RoleEntity(
     val team: String, // "Mafia", "Citizen", "Independent"
     val count: Int = 0, // chosen setup count
     val capabilitiesJson: String = "", // list of default TemplateCapabilities
-    val iconName: String = "" // Added icon selection support
+    val iconName: String = "", // Added icon selection support
+    val abilitiesJson: String = "[]" // JSON representation of chosen ability IDs or direct list
 )
 
 @Entity(tableName = "game_logs")

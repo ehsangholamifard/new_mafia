@@ -275,6 +275,16 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateRoleAbilities(roleId: Int, abilitiesJson: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val roleList = roles.value
+            val role = roleList.find { it.id == roleId } ?: return@launch
+            val updated = role.copy(abilitiesJson = abilitiesJson)
+            repository.updateRole(updated)
+            repository.addLog("قابلیت‌های نقش «${role.name}» با موفقیت ویرایش شد ⚙️")
+        }
+    }
+
     fun deleteRole(role: RoleEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteRole(role)
@@ -789,6 +799,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isSaved = false,  // reset night buffers as we enter custom night
                         isHealedThisNight = false,
                         isShotThisNight = false,
+                        isInsuredThisNight = false,
                         isAlive = finalAlive,
                         willDieNextNight = false, // Reset penalty flag as it is now executed
                         isRevealedMafia = false, // Reset the night-revealed mafia status
@@ -819,6 +830,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     player.copy(
                         isBlocked = false, // Night ends, block expires
                         isBlockedThisNight = false, // Reset Matador's night block
+                        isInsuredThisNight = false,
                         hasLiveGunThisRound = hasLiveGun
                     )
                 }
@@ -847,6 +859,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isHealedThisNight = false,
                     isShotThisNight = false,
                     isBlockedThisNight = false,
+                    isInsuredThisNight = false,
                     doctorSelfSavesCount = 0,
                     capabilitiesJson = "",
                     hasUsedLastMoveCard = false,
@@ -936,10 +949,68 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun insurePlayer(insurerId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val insurer = repository.getPlayerById(insurerId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (insurer.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت بیمه‌کننده «${insurer.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Check remaining capability count first
+            if (insurer.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(insurer.capabilitiesJson)
+                    val insureCap = caps.find { it.name.contains("بیمه") }
+                    if (insureCap != null && insureCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: بیمه‌کننده دیگر بیمه مجاز باقی‌مانده ندارد.")
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement Insurer's capability count
+            if (insurer.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(insurer.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("بیمه") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedInsurer = insurer.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedInsurer)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Mark target player as insured
+            val updatedTarget = target.copy(isInsuredThisNight = true)
+            repository.updatePlayer(updatedTarget)
+            repository.addLog("🛡️ بیمه‌کننده «${insurer.name}» بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را امشب بیمه کرد. او از هرگونه قابلیت شبانه در امان خواهد بود.")
+
+            // Refresh selected player settings
+            if (_selectedPlayerForSettings.value?.id == insurerId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(insurerId)
+            }
+        }
+    }
+
     fun professionalShoot(professionalId: Int, targetId: Int, overrideKill: Boolean? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+            
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.assignedRoleName ?: "حرفه‌ای"}» روی او خنثی شد.")
+                return@launch
+            }
             
             if (prof.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
@@ -1058,6 +1129,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.assignedRoleName ?: "حرفه‌ای"}» روی او خنثی شد.")
+                return@launch
+            }
+            
             if (prof.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
                 return@launch
@@ -1118,6 +1194,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val doc = repository.getPlayerById(doctorId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+            
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت پزشک «${doc.assignedRoleName ?: "پزشک"}» روی او خنثی شد.")
+                return@launch
+            }
             
             if (doc.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت پزشک «${doc.name}» امشب توسط ماتادور بسته شده است.")
@@ -1215,6 +1296,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
 
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» روی او خنثی شد.")
+                return@launch
+            }
+
             if (gf.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
                 return@launch
@@ -1287,6 +1373,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
             
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» روی او خنثی شد.")
+                return@launch
+            }
+            
             if (gf.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
                 return@launch
@@ -1348,6 +1439,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val matador = repository.getPlayerById(matadorId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
 
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت مسدود کردن «${matador.name}» روی او خنثی شد.")
+                return@launch
+            }
+
             // Check remaining capability count first
             if (matador.capabilitiesJson.isNotBlank()) {
                 try {
@@ -1395,6 +1491,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val general = repository.getPlayerById(generalId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت اوشن - ژنرال «${general.name}» روی او خنثی شد.")
+                return@launch
+            }
 
             if (general.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت اوشن - ژنرال «${general.name}» امشب توسط ماتادور بسته شده است.")
@@ -1492,10 +1593,39 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun executeVeto(vetoPlayerId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val vetoPlayer = repository.getPlayerById(vetoPlayerId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (vetoPlayer.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت وتو کننده «${vetoPlayer.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Revive execution: change state to isAlive = true and clear death status
+            val revivedTarget = target.copy(
+                isAlive = true,
+                isKilledToday = false,
+                isSlaughtered = false,
+                isShotThisNight = false,
+                isSaved = false,
+                isRevivedThisNight = true
+            )
+            repository.updatePlayer(revivedTarget)
+            repository.addLog("⚡ بازیکن «${vetoPlayer.name}» رای‌گیری را وتو کرد! بازیکن «${target.name}» با موفقیت به بازی برگشت.")
+        }
+    }
+
     fun citizenKaneReveal(kaneId: Int, targetId: Int, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             var kane = repository.getPlayerById(kaneId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت همشهری کین «${kane.name}» روی او خنثی شد.")
+                return@launch
+            }
 
             if (kane.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت همشهری کین «${kane.name}» امشب توسط ماتادور بسته شده است.")
@@ -1546,6 +1676,14 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             var gf = repository.getPlayerById(godfatherId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» روی او خنثی شد.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("⚠️ خطا: بازیکن هدف بیمه است و قابلیت روی او اثرگذار نبود.")
+                }
+                return@launch
+            }
 
             if (gf.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
@@ -1610,6 +1748,14 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             var buyer = repository.getPlayerById(buyerId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
 
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت خریدار (مذاکره کننده) «${buyer.name}» روی او خنثی شد.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("⚠️ خطا: بازیکن هدف بیمه است و قابلیت روی او اثرگذار نبود.")
+                }
+                return@launch
+            }
+
             if (buyer.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت خریدار (مذاکره کننده) «${buyer.name}» امشب توسط ماتادور بسته شده است.")
                 viewModelScope.launch(Dispatchers.Main) {
@@ -1672,6 +1818,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val musketeer = repository.getPlayerById(musketeerId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت تفنگدار «${musketeer.name}» روی او خنثی شد.")
+                return@launch
+            }
 
             if (musketeer.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت تفنگدار «${musketeer.name}» امشب توسط ماتادور بسته شده است.")
