@@ -88,6 +88,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val totalInquiries by viewModel.totalInquiries.collectAsStateWithLifecycle()
         val remainingInquiries by viewModel.remainingInquiries.collectAsStateWithLifecycle()
         val moderatorName by viewModel.moderatorName.collectAsStateWithLifecycle()
+        val musketeerLiveGunExhausted by viewModel.musketeerLiveGunExhausted.collectAsStateWithLifecycle()
 
         var showCapabilitiesTemplateDialog by remember { mutableStateOf(false) }
         var showExportImportDialog by remember { mutableStateOf(false) }
@@ -95,6 +96,8 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         var showHistoryDialog by remember { mutableStateOf(false) }
         var showModeratorNameDialog by remember { mutableStateOf(false) }
         var roleToConfigureCapabilities by remember { mutableStateOf<RoleEntity?>(null) }
+        var shooterForLiveGun by remember { mutableStateOf<PlayerEntity?>(null) }
+        var targetResultForLiveGun by remember { mutableStateOf<Pair<String, String>?>(null) }
 
         // Day Phase Timer Hoisted State
         var timerSelectedTime by rememberSaveable { mutableStateOf(60) }
@@ -298,7 +301,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onTimerIsRunningChange = { timerIsRunning = it },
                             totalInquiries = totalInquiries,
                             remainingInquiries = remainingInquiries,
-                            onDecrementInquiry = { viewModel.decrementInquiry() }
+                            onDecrementInquiry = { viewModel.decrementInquiry() },
+                            triggerConfirmation = triggerConfirmation,
+                            onUseLiveGun = { shooterForLiveGun = it }
                         )
                     }
                 }
@@ -435,7 +440,11 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         },
                         onCitizenKaneReveal = { kaneId, targetId, onResult ->
                             viewModel.citizenKaneReveal(kaneId, targetId, onResult)
-                        }
+                        },
+                        onGiveGun = { musketeerId, targetId, isLive ->
+                            viewModel.giveMusketeerGun(musketeerId, targetId, isLive)
+                        },
+                        musketeerLiveGunExhausted = musketeerLiveGunExhausted
                     )
                 }
 
@@ -456,6 +465,151 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         onDismiss = { showExportImportDialog = false },
                         exportData = { viewModel.exportSetupAsJson() },
                         onImport = { viewModel.importSetupFromJson(it) }
+                    )
+                }
+
+                // 💥 Use Live Gun Shooting Selection Dialog
+                val shooter = shooterForLiveGun
+                if (shooter != null) {
+                    val availableTargets = remember(players) {
+                        players.filter { it.isSelected && it.isAlive && it.id != shooter.id }
+                    }
+                    var selectedTargetId by remember { mutableStateOf<Int?>(null) }
+                    var dropdownExpanded by remember { mutableStateOf(false) }
+                    val selectedTarget = remember(selectedTargetId, players) { players.find { it.id == selectedTargetId } }
+
+                    Dialog(onDismissRequest = { shooterForLiveGun = null }) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(AccentCrimson.copy(alpha = 0.12f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("💥", fontSize = 24.sp)
+                                }
+
+                                Text(
+                                    text = "شلیک با تفنگ جنگی 💥",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "بازیکن مسلح «${shooter.name}» می‌خواهد از تفنگ جنگی خود استفاده کند. هدف شلیک را از لیست زیر انتخاب کنید:",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                        .clickable { dropdownExpanded = true }
+                                        .padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = selectedTarget?.name ?: "انتخاب بازیکن هدف شلیک... 💀",
+                                            color = if (selectedTarget != null) Color.White else Color.Gray,
+                                            fontSize = 12.sp
+                                        )
+                                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentCrimson)
+                                    }
+                                    DropdownMenu(
+                                        expanded = dropdownExpanded,
+                                        onDismissRequest = { dropdownExpanded = false },
+                                        modifier = Modifier.fillMaxWidth(0.9f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                    ) {
+                                        if (availableTargets.isEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text("هیچ بازیکن زنده دیگری یافت نشد", color = Color.Gray, fontSize = 12.sp) },
+                                                onClick = { dropdownExpanded = false }
+                                            )
+                                        } else {
+                                            availableTargets.forEach { t ->
+                                                DropdownMenuItem(
+                                                    text = { Text("${t.name} (${t.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 12.sp) },
+                                                    onClick = {
+                                                        selectedTargetId = t.id
+                                                        dropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Button(
+                                        onClick = { shooterForLiveGun = null },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E2A)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1.0f)
+                                    ) {
+                                        Text("انصراف", color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            if (selectedTarget != null) {
+                                                triggerConfirmation(
+                                                    "تأیید نهایی اعدام با تفنگ 💀",
+                                                    "آیا مطمئن هستید که می‌خواهید بازیکن «${selectedTarget.name}» مستقیماً توسط تفنگ جنگی «${shooter.name}» کشته و حذف شود؟"
+                                                ) {
+                                                    viewModel.useLiveGun(shooter.id, selectedTarget.id) { deadName, faction ->
+                                                        targetResultForLiveGun = Pair(deadName, faction)
+                                                    }
+                                                    shooterForLiveGun = null
+                                                }
+                                            }
+                                        },
+                                        enabled = selectedTarget != null,
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF2C2C35)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1.0f).testTag("shoot_confirm_btn")
+                                    ) {
+                                        Text("شلیک 💥", color = if (selectedTarget != null) Color.White else Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 📢 Revealing Target Faction Modal
+                val result = targetResultForLiveGun
+                if (result != null) {
+                    StyledConfirmationDialog(
+                        title = "نتیجه شلیک تفنگ جنگی 📢💥",
+                        message = "هدف غرق در خون شد و در دم کشته شد! \n\n👤 نام هدف جدید: «${result.first}»\n🕊️ جناح واقعی او: [${result.second}]",
+                        onConfirm = { targetResultForLiveGun = null },
+                        onDismiss = { targetResultForLiveGun = null }
                     )
                 }
 
@@ -1606,7 +1760,9 @@ fun PlayStageContent(
     totalInquiries: Int,
     remainingInquiries: Int,
     onDecrementInquiry: () -> Unit,
-    onUpdatePlayerVoteDirectly: (Int, Int) -> Unit
+    onUpdatePlayerVoteDirectly: (Int, Int) -> Unit,
+    triggerConfirmation: (String, String, () -> Unit) -> Unit = { _, _, _ -> },
+    onUseLiveGun: (PlayerEntity) -> Unit = {}
 ) {
     var showLogsStream by remember { mutableStateOf(true) }
 
@@ -1795,7 +1951,21 @@ fun PlayStageContent(
                     
                     // Start Voting Button (شروع رای گیری)
                     Button(
-                        onClick = { showVotingDialog = true },
+                        onClick = {
+                            val unusedLiveGunPlayers = players.filter { it.isSelected && it.isAlive && it.hasLiveGunThisRound && !it.usedLiveGun }
+                            if (unusedLiveGunPlayers.isNotEmpty()) {
+                                val names = unusedLiveGunPlayers.joinToString("، ") { it.name }
+                                triggerConfirmation(
+                                    "تنبلی تفنگ جنگی ⚠️",
+                                    "دارنده تفنگ جنگی («$names») از تفنگش استفاده نکرده است و کشته می‌شود. تایید میکنید؟"
+                                ) {
+                                    unusedLiveGunPlayers.forEach { onToggleLife(it.id) }
+                                    showVotingDialog = true
+                                }
+                            } else {
+                                showVotingDialog = true
+                            }
+                        },
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentGold,
@@ -1919,7 +2089,8 @@ fun PlayStageContent(
                             },
                             onToggleBlock = { onToggleBlock(player.id) },
                             onToggleMute = { onToggleMute(player.id) },
-                            onToggleLife = { onToggleLife(player.id) }
+                            onToggleLife = { onToggleLife(player.id) },
+                            onUseLiveGun = { onUseLiveGun(player) }
                         )
                     }
                 }
@@ -2994,7 +3165,8 @@ fun PlayerLiveCard(
     onRegisterEvent: (String) -> Unit,
     onToggleBlock: () -> Unit,
     onToggleMute: () -> Unit,
-    onToggleLife: () -> Unit
+    onToggleLife: () -> Unit,
+    onUseLiveGun: () -> Unit = {}
 ) {
     val isDead = !player.isAlive
     val aliveCount = remember(players) { players.filter { it.isSelected && it.isAlive }.size }
@@ -3132,6 +3304,9 @@ fun PlayerLiveCard(
                     if (isInDefense && phase == "Day") {
                         BadgeLabel(text = "دفاع ⚖️", bgColor = Color(0xFF4D1D16), txtColor = Color(0xFFFFB300))
                     }
+                    if (phase == "Day" && (player.hasBlankGunThisRound || player.hasLiveGunThisRound)) {
+                        BadgeLabel(text = "مسلح 🔫", bgColor = Color(0xFF1E293B), txtColor = Color(0xFF60A5FA))
+                    }
 
                     // Direct toggle life state button
                     IconButton(onClick = onToggleLife) {
@@ -3161,6 +3336,26 @@ fun PlayerLiveCard(
                         text = "🚨 ورود به دفاعیه (رأی کافی: ${player.voteCount} از فرجه $formattedThreshold) ⚖️",
                         color = Color.White,
                         fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (phase == "Day" && player.hasLiveGunThisRound && !player.usedLiveGun && !isDead) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = onUseLiveGun,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentCrimson,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("use_live_gun_btn_${player.id}")
+                ) {
+                    Text(
+                        text = "استفاده از تفنگ جنگی 💥",
+                        color = Color.White,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -3385,7 +3580,9 @@ fun PlayerSettingsDialog(
     onMatadorBlock: (Int, Int) -> Unit = { _, _ -> },
     onGeneralCheck: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onConstantineRevive: (Int, Int) -> Unit = { _, _ -> },
-    onCitizenKaneReveal: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+    onCitizenKaneReveal: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onGiveGun: (Int, Int, Boolean) -> Unit = { _, _, _ -> },
+    musketeerLiveGunExhausted: Boolean = false
 ) {
     var noteText by remember { mutableStateOf(player.note) }
     var showOverrideDialog by remember { mutableStateOf(false) }
@@ -4771,6 +4968,213 @@ fun PlayerSettingsDialog(
                                          showRecruitConfirmDialog = false
                                      }
                                  )
+                             }
+                         }
+                     } else if (player.assignedRoleName?.contains("تفنگدار") == true) {
+                         item {
+                             Text(
+                                 text = "🪖 تفنگدار (مسلح کردن بازیکنان):",
+                                 fontWeight = FontWeight.Bold,
+                                 color = AccentGold,
+                                 fontSize = 12.sp
+                             )
+                             Spacer(modifier = Modifier.height(6.dp))
+
+                             val liveCap = caps.find { it.name.contains("جنگی") }
+                             val blankCap = caps.find { it.name.contains("مشقی") }
+                             if (liveCap != null || blankCap != null) {
+                                 Text(
+                                     text = "⚔️ تفنگ جنگی باقی‌مانده: ${if (musketeerLiveGunExhausted) 0 else (liveCap?.remainingCount ?: 0)} | 🔫 تفنگ مشقی باقی‌مانده: ${blankCap?.remainingCount ?: "نامحدود"}",
+                                     color = AccentGold,
+                                     fontSize = 11.sp,
+                                     fontWeight = FontWeight.Bold,
+                                     modifier = Modifier.padding(bottom = 6.dp)
+                                 )
+                             }
+
+                             var targetId1 by remember { mutableStateOf<Int?>(null) }
+                             var targetId2 by remember { mutableStateOf<Int?>(null) }
+
+                             var expanded1 by remember { mutableStateOf(false) }
+                             var expanded2 by remember { mutableStateOf(false) }
+
+                             val targetPlayer1 = remember(targetId1, players) { players.find { it.id == targetId1 } }
+                             val targetPlayer2 = remember(targetId2, players) { players.find { it.id == targetId2 } }
+
+                             val alivePlayers = remember(players) {
+                                 players.filter { it.isSelected && it.isAlive }
+                             }
+
+                             val isActionAllowed = !player.isBlocked && !player.isBlockedThisNight
+
+                             Column(
+                                 modifier = Modifier
+                                     .fillMaxWidth()
+                                     .background(Color(0xFF13131F), RoundedCornerShape(8.dp))
+                                     .border(1.5.dp, BorderColor, RoundedCornerShape(8.dp))
+                                     .padding(8.dp)
+                             ) {
+                                 Text("🎯 انتخاب بازیکن اول:", color = Color.Gray, fontSize = 11.sp)
+                                 Spacer(modifier = Modifier.height(4.dp))
+                                 Box(
+                                     modifier = Modifier
+                                         .fillMaxWidth()
+                                         .background(Color(0xFF191928), RoundedCornerShape(6.dp))
+                                         .clickable { expanded1 = true }
+                                         .padding(10.dp)
+                                 ) {
+                                     Row(
+                                         modifier = Modifier.fillMaxWidth(),
+                                         horizontalArrangement = Arrangement.SpaceBetween,
+                                         verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                         Text(
+                                             text = targetPlayer1?.name ?: "انتخاب بازیکن هدف اول... 👥",
+                                             color = if (targetPlayer1 != null) Color.White else Color.Gray,
+                                             fontSize = 11.sp
+                                         )
+                                         Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                     }
+                                     DropdownMenu(
+                                         expanded = expanded1,
+                                         onDismissRequest = { expanded1 = false },
+                                         modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                     ) {
+                                         DropdownMenuItem(
+                                             text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
+                                             onClick = { targetId1 = null; expanded1 = false }
+                                         )
+                                         alivePlayers.forEach { aliveP ->
+                                             DropdownMenuItem(
+                                                 text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                                 onClick = { targetId1 = aliveP.id; expanded1 = false }
+                                             )
+                                         }
+                                     }
+                                 }
+
+                                 if (targetPlayer1 != null) {
+                                     Spacer(modifier = Modifier.height(8.dp))
+                                     Row(
+                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                         modifier = Modifier.fillMaxWidth()
+                                     ) {
+                                         val isBlankEnabled1 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
+                                         Button(
+                                             onClick = {
+                                                onGiveGun(player.id, targetPlayer1.id, false)
+                                                targetId1 = null
+                                             },
+                                             enabled = isBlankEnabled1,
+                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
+                                             modifier = Modifier.weight(1f).testTag("musketeer_blank_gun_1"),
+                                             shape = RoundedCornerShape(8.dp)
+                                         ) {
+                                             Text("اعطای تیر مشقی 🔫", color = if (isBlankEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                         }
+
+                                         val anyLiveGunTonight1 = players.any { it.hasLiveGunThisRound }
+                                         val isLiveEnabled1 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight1 && (liveCap == null || liveCap.remainingCount > 0)
+                                         Button(
+                                             onClick = {
+                                                onGiveGun(player.id, targetPlayer1.id, true)
+                                                targetId1 = null
+                                             },
+                                             enabled = isLiveEnabled1,
+                                             colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
+                                             modifier = Modifier.weight(1f).testTag("musketeer_live_gun_1"),
+                                             shape = RoundedCornerShape(8.dp)
+                                         ) {
+                                             Text("اعطای تیر جنگی ⚔️", color = if (isLiveEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                         }
+                                     }
+                                 }
+                             }
+
+                             Spacer(modifier = Modifier.height(10.dp))
+
+                             Column(
+                                 modifier = Modifier
+                                     .fillMaxWidth()
+                                     .background(Color(0xFF13131F), RoundedCornerShape(8.dp))
+                                     .border(1.5.dp, BorderColor, RoundedCornerShape(8.dp))
+                                     .padding(8.dp)
+                             ) {
+                                 Text("🎯 انتخاب بازیکن دوم:", color = Color.Gray, fontSize = 11.sp)
+                                 Spacer(modifier = Modifier.height(4.dp))
+                                 Box(
+                                     modifier = Modifier
+                                         .fillMaxWidth()
+                                         .background(Color(0xFF191928), RoundedCornerShape(6.dp))
+                                         .clickable { expanded2 = true }
+                                         .padding(10.dp)
+                                 ) {
+                                     Row(
+                                         modifier = Modifier.fillMaxWidth(),
+                                         horizontalArrangement = Arrangement.SpaceBetween,
+                                         verticalAlignment = Alignment.CenterVertically
+                                     ) {
+                                         Text(
+                                             text = targetPlayer2?.name ?: "انتخاب بازیکن هدف دوم... 👥",
+                                             color = if (targetPlayer2 != null) Color.White else Color.Gray,
+                                             fontSize = 11.sp
+                                         )
+                                         Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                     }
+                                     DropdownMenu(
+                                         expanded = expanded2,
+                                         onDismissRequest = { expanded2 = false },
+                                         modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                     ) {
+                                         DropdownMenuItem(
+                                             text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
+                                             onClick = { targetId2 = null; expanded2 = false }
+                                         )
+                                         alivePlayers.filter { it.id != (targetId1 ?: -1) }.forEach { aliveP ->
+                                             DropdownMenuItem(
+                                                 text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                                 onClick = { targetId2 = aliveP.id; expanded2 = false }
+                                             )
+                                         }
+                                     }
+                                 }
+
+                                 if (targetPlayer2 != null) {
+                                     Spacer(modifier = Modifier.height(8.dp))
+                                     Row(
+                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                         modifier = Modifier.fillMaxWidth()
+                                     ) {
+                                         val isBlankEnabled2 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
+                                         Button(
+                                             onClick = {
+                                                onGiveGun(player.id, targetPlayer2.id, false)
+                                                targetId2 = null
+                                             },
+                                             enabled = isBlankEnabled2,
+                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
+                                             modifier = Modifier.weight(1f).testTag("musketeer_blank_gun_2"),
+                                             shape = RoundedCornerShape(8.dp)
+                                         ) {
+                                             Text("اعطای تیر مشقی 🔫", color = if (isBlankEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                         }
+
+                                         val anyLiveGunTonight2 = players.any { it.hasLiveGunThisRound }
+                                         val isLiveEnabled2 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight2 && (liveCap == null || liveCap.remainingCount > 0)
+                                         Button(
+                                             onClick = {
+                                                onGiveGun(player.id, targetPlayer2.id, true)
+                                                targetId2 = null
+                                             },
+                                             enabled = isLiveEnabled2,
+                                             colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
+                                             modifier = Modifier.weight(1f).testTag("musketeer_live_gun_2"),
+                                             shape = RoundedCornerShape(8.dp)
+                                         ) {
+                                             Text("اعطای تیر جنگی ⚔️", color = if (isLiveEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                         }
+                                     }
+                                 }
                              }
                          }
                      } else {

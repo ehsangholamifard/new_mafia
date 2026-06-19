@@ -99,6 +99,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedPlayerForSettings = MutableStateFlow<PlayerEntity?>(null)
     val selectedPlayerForSettings: StateFlow<PlayerEntity?> = _selectedPlayerForSettings.asStateFlow()
 
+    private val _musketeerLiveGunExhausted = MutableStateFlow(false)
+    val musketeerLiveGunExhausted: StateFlow<Boolean> = _musketeerLiveGunExhausted.asStateFlow()
+
+    fun setMusketeerLiveGunExhausted(exhausted: Boolean) {
+        _musketeerLiveGunExhausted.value = exhausted
+    }
+
     // Last Move Cards list
     private val _lastMoveCards = MutableStateFlow(
         listOf(
@@ -788,17 +795,35 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isRevivedThisNight = false, // Reset the night-revived status
                         isKilledToday = false,
                         isMuted = false, // Day ends, mute expires
-                        isVoteRevoked = false // Day ends, vote restriction expires
+                        isVoteRevoked = false, // Day ends, vote restriction expires
+                        hasBlankGunThisRound = false, // Day to Night cleanup (Part 5)
+                        hasLiveGunThisRound = false, // Day to Night cleanup (Part 5)
+                        usedLiveGun = false // Day to Night cleanup (Part 5)
                     )
                 }
                 repository.insertPlayers(updated)
             } else {
-                // If entering day, we reset night variables like block
-                val updated = players.value.map {
-                    it.copy(
+                // If entering day, we check if player with live gun was killed during night
+                var liveGunSurvived = false
+                val updated = players.value.map { player ->
+                    var hasLiveGun = player.hasLiveGunThisRound
+                    if (hasLiveGun) {
+                        if (!player.isAlive) {
+                            hasLiveGun = false // Clear flag, gun is returned! (Part 2)
+                            repository.addLog("🔄 بازیکن تفنگدار با تفنگ جنگی «${player.name}» دیشب کشته شد، تفنگ جنگی به تفنگدار بازگردانده شد.")
+                        } else {
+                            liveGunSurvived = true // Survived, lock Musketeer's ability! (Part 2)
+                            repository.addLog("🔒 بازیکن «${player.name}» تفنگ جنگی را با خود به روز برد. قابلیت تفنگ جنگی تفنگدار برای ادامه بازی قفل شد.")
+                        }
+                    }
+                    player.copy(
                         isBlocked = false, // Night ends, block expires
-                        isBlockedThisNight = false // Reset Matador's night block
+                        isBlockedThisNight = false, // Reset Matador's night block
+                        hasLiveGunThisRound = hasLiveGun
                     )
+                }
+                if (liveGunSurvived) {
+                    _musketeerLiveGunExhausted.value = true
                 }
                 repository.insertPlayers(updated)
             }
@@ -831,11 +856,15 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isSlaughtered = false,
                     isRevealedMafia = false,
                     willDieNextNight = false,
-                    isRevivedThisNight = false
+                    isRevivedThisNight = false,
+                    hasBlankGunThisRound = false,
+                    hasLiveGunThisRound = false,
+                    usedLiveGun = false
                 )
             }
             repository.insertPlayers(restored)
             repository.clearLogs()
+            _musketeerLiveGunExhausted.value = false
             _remainingInquiries.value = _totalInquiries.value
             _gameStage.value = "SETUP"
             _gamePhase.value = "Night"
@@ -1635,6 +1664,88 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
             if (_selectedPlayerForSettings.value?.id == buyerId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(buyerId)
+            }
+        }
+    }
+
+    fun giveMusketeerGun(musketeerId: Int, targetId: Int, isLive: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val musketeer = repository.getPlayerById(musketeerId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (musketeer.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت تفنگدار «${musketeer.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            if (isLive) {
+                if (_musketeerLiveGunExhausted.value) {
+                    repository.addLog("⚠️ خطا: تفنگدار دیگر تفنگ جنگی مجاز باقی‌مانده ندارد.")
+                    return@launch
+                }
+
+                // Clear any other player's current tonight live gun flag so there's at most 1 live gun assigned per night.
+                val playersList = repository.getAllPlayersList()
+                val updatedList = playersList.map {
+                    if (it.hasLiveGunThisRound) it.copy(hasLiveGunThisRound = false) else it
+                }
+                repository.insertPlayers(updatedList)
+
+                val freshTarget = repository.getPlayerById(targetId) ?: target
+                val finalTarget = freshTarget.copy(hasLiveGunThisRound = true, hasBlankGunThisRound = false)
+                repository.updatePlayer(finalTarget)
+                repository.addLog("🔫 تفنگدار «${musketeer.name}» تفنگ جنگی به بازیکن «${target.name}» اعطا کرد.")
+            } else {
+                val finalTarget = target.copy(hasBlankGunThisRound = true, hasLiveGunThisRound = false)
+                repository.updatePlayer(finalTarget)
+                repository.addLog("🔫 تفنگدار «${musketeer.name}» تفنگ مشقی به بازیکن «${target.name}» اعطا کرد.")
+            }
+
+            // Decrement Musketeer's capability counts in capabilitiesJson if they exist
+            if (musketeer.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(musketeer.capabilitiesJson)
+                    val targetCapName = if (isLive) "جنگی" else "مشقی"
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains(targetCapName) && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedMusketeer = musketeer.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedMusketeer)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            if (_selectedPlayerForSettings.value?.id == musketeerId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(musketeerId)
+            }
+        }
+    }
+
+    fun useLiveGun(shooterId: Int, targetId: Int, onResult: (String, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val shooter = repository.getPlayerById(shooterId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            val updatedShooter = shooter.copy(usedLiveGun = true)
+            repository.updatePlayer(updatedShooter)
+
+            val deadTarget = target.copy(isAlive = false)
+            repository.updatePlayer(deadTarget)
+
+            val factionLabel = when (target.assignedRoleTeam) {
+                "Mafia" -> "مافیا"
+                "Citizen" -> "شهروند"
+                else -> "مستقل"
+            }
+
+            repository.addLog("💥 شلیک تفنگ جنگی: بازیکن «${shooter.name}» با تفنگ جنگی به سمت بازیکن «${target.name}» شلیک کرد و او را کشت! (جناح هدف: $factionLabel)")
+
+            viewModelScope.launch(Dispatchers.Main) {
+                onResult(target.name, factionLabel)
             }
         }
     }
