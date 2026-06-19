@@ -102,9 +102,9 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                 ),
                 RoleEntity(
                     name = "رئیس مافیا (پدرخوانده) 👑",
-                    description = "رهبر گروه مافیا که استعلام او برای کارآگاه همیشه منفی (شهروند) است و فرمان شلیک شب را صادر میکند",
+                    description = "رهبر گروه مافیا که استعلام او برای کارآگاه همیشه منفی (شهروند) است و فرمان شلیک شب را صادر میکند و دارای قابلیت خریداری (مذاکره) است",
                     team = "Mafia",
-                    capabilitiesJson = """[{"name":"شلیک شبانه مافیا 💀","totalCount":10,"remainingCount":10}]"""
+                    capabilitiesJson = """[{"name":"شلیک شبانه مافیا 💀","totalCount":10,"remainingCount":10},{"name":"خریداری (مذاکره) 🤝","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
                     name = "دکتر لکتور 💊",
@@ -113,10 +113,10 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     capabilitiesJson = """[{"name":"شفا‌یار مافیا 💊","totalCount":10,"remainingCount":10}]"""
                 ),
                 RoleEntity(
-                    name = "مذاکره‌کننده 🤝",
-                    description = "در صورت حذف یکی از یاران مافیا، می‌تواند با یک شهروند ساده مذاکره کند تا او هم‌تیم مافیا شود",
+                    name = "خریدار (مذاکره کننده) 🤝",
+                    description = "می‌تواند با حدس زدن درست نقش شهروند ساده، او را خریداری کند تا هم‌تیم مافیا شود",
                     team = "Mafia",
-                    capabilitiesJson = """[{"name":"پیشنهاد مذاکره 🤝","totalCount":1,"remainingCount":1}]"""
+                    capabilitiesJson = """[{"name":"خریداری (مذاکره) 🤝","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
                     name = "تروریست 💣",

@@ -154,7 +154,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Preset capabilities
     private val _capabilityTemplates = MutableStateFlow(
-        listOf("استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "پیشنهاد مذاکره 🤝", "انفجار انتحاری 💣")
+        listOf("استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣")
     )
     val capabilityTemplates: StateFlow<List<String>> = _capabilityTemplates.asStateFlow()
 
@@ -328,7 +328,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetCapabilityTemplatesToDefaults() {
         _capabilityTemplates.value = listOf(
-            "استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "پیشنهاد مذاکره 🤝", "انفجار انتحاری 💣"
+            "استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣"
         )
     }
 
@@ -965,7 +965,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 // 1. Target is a Citizen (Team is Citizen) -> Professional is eliminated
                 if (target.assignedRoleTeam == "Citizen") {
                     // Professional commits suicide
-                    val deadProf = prof.copy(isAlive = false, isSaved = false)
+                    val deadProf = prof.copy(isAlive = false, isSaved = false, isShotThisNight = true)
                     repository.updatePlayer(deadProf)
                     repository.addLog("💀 بازیکن «${prof.name}» (حرفه‌ای) به اشتباه به هم‌تیمی خود «${target.name}» (شهروند) شلیک کرد و فوراً خودکشی انتحاری روی او اعمال گردید. شفا بر روی او بی‌اثر است.")
                 } else if (target.assignedRoleTeam == "Mafia") {
@@ -1392,7 +1392,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val isMafia = target.assignedRoleTeam == "Mafia"
             if (isMafia) {
                 // Eliminate general immediately
-                val deadGen = general.copy(isAlive = false, isSaved = false)
+                val deadGen = general.copy(isAlive = false, isSaved = false, isShotThisNight = true)
                 repository.updatePlayer(deadGen)
                 repository.addLog("💀 بازیکن «${general.name}» (اوشن - ژنرال) به علت استعلام اشتباه روی بازیکن «${target.name}» (مافیا) حذف گردید.")
                 withContext(Dispatchers.Main) {
@@ -1509,6 +1509,69 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
             if (_selectedPlayerForSettings.value?.id == kaneId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(kaneId)
+            }
+        }
+    }
+
+    fun godfatherRecruit(godfatherId: Int, targetId: Int, onResult: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var gf = repository.getPlayerById(godfatherId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (gf.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» امشب توسط ماتادور بسته شده است.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("⚠️ خطا: قابلیت رئیس مافیا (پدرخوانده) امشب توسط ماتادور بسته شده است.")
+                }
+                return@launch
+            }
+
+            // Decrement Godfather's "خریداری" capability count if exists
+            if (gf.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(gf.capabilitiesJson)
+                    val recruitCap = caps.find { it.name.contains("خریداری") }
+                    if (recruitCap != null && recruitCap.remainingCount <= 0) {
+                        viewModelScope.launch(Dispatchers.Main) {
+                            onResult("⚠️ خطا: رئیس مافیا (پدرخوانده) دیگر قابلیت خریداری مجاز باقی‌مانده ندارد.")
+                        }
+                        return@launch
+                    }
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("خریداری") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    gf = gf.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(gf)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Evaluate target's role: "شهروند ساده 🕊️" or "شهروند ساده"
+            val isSimpleCitizen = target.assignedRoleName?.contains("شهروند ساده") == true
+            if (isSimpleCitizen) {
+                // Change to Simple Mafia (مافیای ساده 👤) and update faction to Mafia
+                val recruitedTarget = target.copy(
+                    assignedRoleName = "مافیای ساده 👤",
+                    assignedRoleTeam = "Mafia"
+                )
+                repository.updatePlayer(recruitedTarget)
+                repository.addLog("🤝 رئیس مافیا (پدرخوانده) «${gf.name}» با موفقیت بازیکن «${target.name}» را خریداری کرد. او به مافیای ساده تبدیل شد.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("حدس درست بود! این بازیکن به مافیای ساده تغییر یافت.")
+                }
+            } else {
+                repository.addLog("🤝 تلاش رئیس مافیا (پدرخوانده) «${gf.name}» برای خریداری بازیکن «${target.name}» ناموفق بود (او شهروند ساده نیست).")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("حدس اشتباه بود. این بازیکن شهروند ساده نیست و تغییری نکرد.")
+                }
+            }
+
+            if (_selectedPlayerForSettings.value?.id == godfatherId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(godfatherId)
             }
         }
     }

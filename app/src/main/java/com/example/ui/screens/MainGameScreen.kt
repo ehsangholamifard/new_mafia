@@ -199,16 +199,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             logs = logs,
                             lastMoveCards = lastMoveCards,
                             onTogglePhase = {
-                                if (phase == "Day") {
-                                    triggerConfirmation(
-                                        "پایان فاز روز 🌙",
-                                        "آیا مطمئن هستید که می‌خواهید روز را پایان دهید و به فاز شب بروید؟"
-                                    ) {
-                                        viewModel.toggleGamePhase()
-                                    }
-                                } else {
-                                    viewModel.toggleGamePhase()
-                                }
+                                viewModel.toggleGamePhase()
                             },
                             onPlayerClick = { clickedPlayer ->
                                 if (phase == "Night" && clickedPlayer.isBlockedThisNight) {
@@ -417,6 +408,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         },
                         onGodfatherSlaughter = { gfId, targetId ->
                             viewModel.godfatherSlaughter(gfId, targetId)
+                        },
+                        onGodfatherRecruit = { gfId, targetId, onResult ->
+                            viewModel.godfatherRecruit(gfId, targetId, onResult)
                         },
                         onMatadorBlock = { matadorId, targetId ->
                             viewModel.matadorBlock(matadorId, targetId)
@@ -2139,7 +2133,7 @@ fun PlayStageContent(
     }
 
     if (showNewNightSummaryDialog) {
-        val shotDeadPlayers = remember(players) { players.filter { it.isSelected && it.isShotThisNight && !it.isAlive } }
+        val shotDeadPlayers = remember(players) { players.filter { it.isSelected && it.isShotThisNight && !it.isAlive && !it.isSlaughtered } }
         val slaughteredPlayers = remember(players) { players.filter { it.isSelected && it.isSlaughtered } }
         val blockedPlayers = remember(players) { players.filter { it.isSelected && it.isBlockedThisNight } }
         val revealedMafiaPlayers = remember(players) { players.filter { it.isSelected && it.isRevealedMafia } }
@@ -3094,6 +3088,7 @@ fun PlayerSettingsDialog(
     onDoctorHeal: (Int, Int) -> Unit = { _, _ -> },
     onGodfatherShoot: (Int, Int) -> Unit = { _, _ -> },
     onGodfatherSlaughter: (Int, Int) -> Unit = { _, _ -> },
+    onGodfatherRecruit: (Int, Int, (String) -> Unit) -> Unit = { _, _, _ -> },
     onMatadorBlock: (Int, Int) -> Unit = { _, _ -> },
     onGeneralCheck: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onConstantineRevive: (Int, Int) -> Unit = { _, _ -> },
@@ -3371,6 +3366,17 @@ fun PlayerSettingsDialog(
                                     modifier = Modifier.padding(bottom = 6.dp)
                                 )
                             }
+                            
+                            val gfRecruitCap = caps.find { it.name.contains("خریداری") }
+                            if (gfRecruitCap != null) {
+                                Text(
+                                    text = "🤝 تعداد خریداری (مذاکره) باقی‌مانده رئیس مافیا: ${gfRecruitCap.remainingCount} از ${gfRecruitCap.totalCount}",
+                                    color = AccentGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                            }
 
                             Box(
                                 modifier = Modifier
@@ -3438,9 +3444,13 @@ fun PlayerSettingsDialog(
                             ) {
                                 var showLocalConfirmDialog by remember { mutableStateOf(false) }
                                 var showShootConfirmDialog by remember { mutableStateOf(false) }
+                                var showRecruitConfirmDialog by remember { mutableStateOf(false) }
                                 
                                 val hasRemainingShots = gfCap == null || gfCap.remainingCount > 0
                                 val isActionEnabled = selectedTarget != null && !player.isBlocked && hasRemainingShots
+                                
+                                val hasRemainingRecruits = gfRecruitCap == null || gfRecruitCap.remainingCount > 0
+                                val isRecruitEnabled = selectedTarget != null && !player.isBlocked && !player.isBlockedThisNight && hasRemainingRecruits
 
                                 Button(
                                     onClick = {
@@ -3475,6 +3485,23 @@ fun PlayerSettingsDialog(
                                 ) {
                                     Text("سلاخی 🔪", color = if (isActionEnabled) Color.White else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
+                                
+                                Button(
+                                    onClick = {
+                                        if (selectedTarget != null) {
+                                            showRecruitConfirmDialog = true
+                                        }
+                                    },
+                                    enabled = isRecruitEnabled,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF1E3A8A),
+                                        disabledContainerColor = Color(0xFF2C2C35)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("خریداری (مذاکره) 🤝", color = if (isRecruitEnabled) Color.White else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
 
                                 if (showShootConfirmDialog && selectedTarget != null) {
                                     StyledConfirmationDialog(
@@ -3504,6 +3531,23 @@ fun PlayerSettingsDialog(
                                         },
                                         onDismiss = {
                                             showLocalConfirmDialog = false
+                                        }
+                                    )
+                                }
+                                
+                                if (showRecruitConfirmDialog && selectedTarget != null) {
+                                    StyledConfirmationDialog(
+                                        title = "تأیید خریداری (مذاکره) بازیکن 🤝",
+                                        message = "آیا مطمئن هستید که می‌خواهید برای خریداری (مذاکره) بازیکن «${selectedTarget.name}» اقدام کنید و حدس نقش بزنید؟",
+                                        onConfirm = {
+                                            onGodfatherRecruit(player.id, selectedTarget.id) { resultMsg ->
+                                                showGeneralResultDialog = resultMsg
+                                            }
+                                            targetPlayerId = null
+                                            showRecruitConfirmDialog = false
+                                        },
+                                        onDismiss = {
+                                            showRecruitConfirmDialog = false
                                         }
                                     )
                                 }
