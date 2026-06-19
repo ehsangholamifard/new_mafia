@@ -1575,4 +1575,67 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun buyerRecruit(buyerId: Int, targetId: Int, onResult: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var buyer = repository.getPlayerById(buyerId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (buyer.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت خریدار (مذاکره کننده) «${buyer.name}» امشب توسط ماتادور بسته شده است.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("⚠️ خطا: قابلیت خریدار (مذاکره کننده) امشب توسط ماتادور بسته شده است.")
+                }
+                return@launch
+            }
+
+            // Decrement Buyer's "خریداری" capability count if exists
+            if (buyer.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(buyer.capabilitiesJson)
+                    val recruitCap = caps.find { it.name.contains("خریداری") }
+                    if (recruitCap != null && recruitCap.remainingCount <= 0) {
+                        viewModelScope.launch(Dispatchers.Main) {
+                            onResult("⚠️ خطا: خریدار (مذاکره کننده) دیگر قابلیت خریداری مجاز باقی‌مانده ندارد.")
+                        }
+                        return@launch
+                    }
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("خریداری") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    buyer = buyer.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(buyer)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Evaluate target's role: "شهروند ساده 🕊️" or "شهروند ساده"
+            val isSimpleCitizen = target.assignedRoleName?.contains("شهروند ساده") == true
+            if (isSimpleCitizen) {
+                // Change to Simple Mafia (مافیای ساده 👤) and update faction to Mafia
+                val recruitedTarget = target.copy(
+                    assignedRoleName = "مافیای ساده 👤",
+                    assignedRoleTeam = "Mafia"
+                )
+                repository.updatePlayer(recruitedTarget)
+                repository.addLog("🤝 خریدار (مذاکره کننده) «${buyer.name}» با موفقیت بازیکن «${target.name}» را خریداری کرد. او به مافیای ساده تبدیل شد.")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("حدس درست بود! این بازیکن به مافیای ساده تغییر یافت.")
+                }
+            } else {
+                repository.addLog("🤝 تلاش خریدار (مذاکره کننده) «${buyer.name}» برای خریداری بازیکن «${target.name}» ناموفق بود (او شهروند ساده نیست).")
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult("حدس اشتباه بود. این بازیکن شهروند ساده نیست و تغییری نکرد.")
+                }
+            }
+
+            if (_selectedPlayerForSettings.value?.id == buyerId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(buyerId)
+            }
+        }
+    }
 }
