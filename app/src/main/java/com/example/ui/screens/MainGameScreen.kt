@@ -60,15 +60,15 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-// Premium Palette
-val BackgroundDark = Color(0xFF09090F)
-val SurfaceDark = Color(0xFF13131F)
-val BorderColor = Color(0xFF222238)
-val AccentCrimson = Color(0xFFEF5350)
-val AccentCitizen = Color(0xFF66BB6A)
-val AccentGold = Color(0xFFFFCA28)
-val TextPrimary = Color(0xFFFFFFFF)
-val TextSecondary = Color(0xFFB0B0C5)
+// Premium Palette (Deep Charcoal/Navy & Elegant Accents)
+val BackgroundDark = Color(0xFF0B0A14) // Sleek deep navy/charcoal background
+val SurfaceDark = Color(0xFF141324)    // Elevated elegant card/dialog container
+val BorderColor = Color(0xFF25233D)    // Subdued modern borders of containers
+val AccentCrimson = Color(0xFFFF4D5A)  // Sleek vibrant crimson accent for Mafia
+val AccentCitizen = Color(0xFF38BDF8)  // Subtle gorgeous azure blue for Citizens
+val AccentGold = Color(0xFFF6C844)     // Subtle golden amber for independents/neutral/highlights
+val TextPrimary = Color(0xFFF8FAFC)    // Clean modern off-white body/head text
+val TextSecondary = Color(0xFF94A3B8)  // Readable slate-gray secondary metadata text
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
