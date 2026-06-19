@@ -75,6 +75,7 @@ val TextSecondary = Color(0xFFB0B0C5)
 fun MainGameScreen(viewModel: MafiaViewModel) {
     // Force RTL local block for consistent elegant Farsi layouts
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        val context = LocalContext.current
         val players by viewModel.players.collectAsStateWithLifecycle()
         val roles by viewModel.roles.collectAsStateWithLifecycle()
         val logs by viewModel.gameLogs.collectAsStateWithLifecycle()
@@ -160,10 +161,15 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onIncrementRole = { roleId ->
                                 val rObj = roles.find { it.id == roleId }
                                 if (rObj != null) {
-                                    if (rObj.name.contains("ساده")) {
-                                        viewModel.updateRoleCount(roleId, rObj.count + 1)
+                                    val isUnique = !rObj.name.contains("ساده")
+                                    if (isUnique && rObj.count >= 1) {
+                                        Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        roleToConfigureCapabilities = rObj
+                                        if (rObj.name.contains("ساده")) {
+                                            viewModel.updateRoleCount(roleId, rObj.count + 1)
+                                        } else {
+                                            roleToConfigureCapabilities = rObj
+                                        }
                                     }
                                 }
                             },
@@ -200,6 +206,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             lastMoveCards = lastMoveCards,
                             onTogglePhase = {
                                 viewModel.toggleGamePhase()
+                            },
+                            onUpdatePlayerVoteDirectly = { id, votes ->
+                                viewModel.updatePlayerVote(id, votes)
                             },
                             onPlayerClick = { clickedPlayer ->
                                 if (phase == "Night" && clickedPlayer.isBlockedThisNight) {
@@ -1317,6 +1326,10 @@ fun TeamRolesSection(
                         }
                     }
 
+                    val context = LocalContext.current
+                    val isUnique = !role.name.contains("ساده")
+                    val isUniqueAndMaxed = isUnique && role.count >= 1
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1340,12 +1353,27 @@ fun TeamRolesSection(
                         )
 
                         IconButton(
-                            onClick = { onInc(role.id) },
+                            onClick = {
+                                if (isUniqueAndMaxed) {
+                                    Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onInc(role.id)
+                                }
+                            },
+                            enabled = !isUniqueAndMaxed,
                             modifier = Modifier
                                 .size(30.dp)
-                                .background(Color(0xFF1E1E2F), CircleShape)
+                                .background(
+                                    if (isUniqueAndMaxed) Color(0xFF1E1E2F).copy(alpha = 0.3f) else Color(0xFF1E1E2F),
+                                    CircleShape
+                                )
                         ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "افزایش", tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "افزایش",
+                                tint = if (isUniqueAndMaxed) Color.White.copy(alpha = 0.3f) else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
@@ -1574,9 +1602,16 @@ fun PlayStageContent(
     onTimerIsRunningChange: (Boolean) -> Unit,
     totalInquiries: Int,
     remainingInquiries: Int,
-    onDecrementInquiry: () -> Unit
+    onDecrementInquiry: () -> Unit,
+    onUpdatePlayerVoteDirectly: (Int, Int) -> Unit
 ) {
     var showLogsStream by remember { mutableStateOf(true) }
+
+    var isVotingCompleted by remember(phase) { mutableStateOf(false) }
+    val playersInDefense = remember(phase) { mutableStateListOf<Int>() }
+    var showVotingDialog by remember { mutableStateOf(false) }
+    var showDefenseResultDialog by remember { mutableStateOf(false) }
+    var defenseEligibleNames by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // Dialog states
     var playerForKillerSelection by remember { mutableStateOf<PlayerEntity?>(null) }
@@ -1734,10 +1769,13 @@ fun PlayStageContent(
                                 showEndDayConfirmationDialog = true
                             }
                         },
+                        enabled = if (phase == "Day") isVotingCompleted else true,
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (phase == "Night") AccentGold else Color(0xFF1C1C2E),
-                            contentColor = if (phase == "Night") BackgroundDark else Color.White
+                            contentColor = if (phase == "Night") BackgroundDark else Color.White,
+                            disabledContainerColor = Color(0xFF23232C),
+                            disabledContentColor = Color.Gray
                         ),
                         modifier = Modifier.height(38.dp)
                     ) {
@@ -1751,6 +1789,39 @@ fun PlayStageContent(
 
                 if (phase == "Day") {
                     HorizontalDivider(color = BorderColor.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 4.dp))
+                    
+                    // Start Voting Button (شروع رای گیری)
+                    Button(
+                        onClick = { showVotingDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentGold,
+                            contentColor = BackgroundDark
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("start_voting_button")
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "شروع رای گیری 🗳️",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Button(
                         onClick = { showDayStatsDialog = true },
                         shape = RoundedCornerShape(10.dp),
@@ -1834,6 +1905,7 @@ fun PlayStageContent(
                             player = player,
                             phase = phase,
                             players = players,
+                            isInDefense = player.id in playersInDefense,
                             onClick = { onPlayerClick(player) },
                             onRegisterEvent = { eventType ->
                                 if (eventType == "KILL") {
@@ -2694,6 +2766,219 @@ fun PlayStageContent(
             }
         }
     }
+
+    if (showVotingDialog) {
+        val alivePlayers = remember(players) { players.filter { it.isSelected && it.isAlive } }
+        val threshold = kotlin.math.ceil(alivePlayers.size / 2.0).toInt()
+        
+        val tempVotes = remember { mutableStateMapOf<Int, Int>().apply { 
+            alivePlayers.forEach { put(it.id, it.voteCount) } 
+        } }
+
+        Dialog(
+            onDismissRequest = { showVotingDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.91f)
+                    .fillMaxHeight(0.85f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "🗳️ مدیریت رأی‌گیری روز سناریو",
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGold,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                    )
+
+                    val formattedThreshold = threshold.toString()
+                    Text(
+                        text = "تعداد زنده: ${alivePlayers.size} نفر | حد نصاب دفاعیه: $formattedThreshold رأی (نصف یا بیشتر زنده)",
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
+
+                    // Player List
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(alivePlayers) { player ->
+                            val currentCount = tempVotes[player.id] ?: 0
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF161623), RoundedCornerShape(10.dp))
+                                    .border(1.dp, BorderColor.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .background(Color(0xFF222235), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("👤", fontSize = 11.sp)
+                                    }
+                                    Column {
+                                        Text(
+                                            text = player.name,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = player.assignedRoleName ?: "بدون نقش",
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Decrement Button
+                                    IconButton(
+                                        onClick = { 
+                                            val current = tempVotes[player.id] ?: 0
+                                            if (current > 0) {
+                                                tempVotes[player.id] = current - 1
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .background(Color(0xFF2C2424), RoundedCornerShape(6.dp))
+                                    ) {
+                                        Text("-", color = AccentCrimson, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Text(
+                                        text = "$currentCount رأی",
+                                        color = if (currentCount >= threshold) AccentCrimson else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.widthIn(min = 40.dp),
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    // Increment Button
+                                    IconButton(
+                                        onClick = { 
+                                            val current = tempVotes[player.id] ?: 0
+                                            tempVotes[player.id] = current + 1
+                                        },
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .background(Color(0xFF1E2F23), RoundedCornerShape(6.dp))
+                                    ) {
+                                        Text("+", color = AccentCitizen, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
+
+                    // Dialog Actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Cancel/Dismiss Button
+                        Button(
+                            onClick = { showVotingDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Transparent,
+                                contentColor = Color.LightGray
+                            ),
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                        ) {
+                            Text(
+                                text = "انصراف",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        // End Voting / Submit Button
+                        Button(
+                            onClick = {
+                                tempVotes.forEach { (pid, votes) ->
+                                    onUpdatePlayerVoteDirectly(pid, votes)
+                                }
+
+                                val qualifiedIds = tempVotes.filter { it.value >= threshold }.keys.toList()
+                                playersInDefense.clear()
+                                playersInDefense.addAll(qualifiedIds)
+
+                                val qualifiedMockList = alivePlayers.filter { it.id in qualifiedIds }
+                                defenseEligibleNames = qualifiedMockList.map { "${it.name} (${tempVotes[it.id] ?: 0} رأی)" }
+
+                                isVotingCompleted = true
+                                showDefenseResultDialog = true
+                                showVotingDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentCitizen,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .height(44.dp)
+                        ) {
+                            Text(
+                                text = "پایان رأی‌گیری 🗳️",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDefenseResultDialog) {
+        StyledConfirmationDialog(
+            title = "🗳️ نتایج رأی‌گیری و لیست دفاعیه",
+            message = if (defenseEligibleNames.isEmpty()) {
+                "هیچ بازیکنی حد نصاب ورود به دفاعیه (نصف یا بیشتر آرا) را کسب نکرد."
+            } else {
+                "بازیکنان زیر با کسب حد نصاب آرا به مرحله دفاعیه راه یافتند:\n\n" + 
+                defenseEligibleNames.joinToString("\n") { "⚖️ $it" }
+            },
+            onConfirm = { showDefenseResultDialog = false },
+            onDismiss = { showDefenseResultDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -2701,6 +2986,7 @@ fun PlayerLiveCard(
     player: PlayerEntity,
     phase: String,
     players: List<PlayerEntity>,
+    isInDefense: Boolean = false,
     onClick: () -> Unit,
     onRegisterEvent: (String) -> Unit,
     onToggleBlock: () -> Unit,
@@ -2709,7 +2995,7 @@ fun PlayerLiveCard(
 ) {
     val isDead = !player.isAlive
     val aliveCount = remember(players) { players.filter { it.isSelected && it.isAlive }.size }
-    val defenseThreshold = aliveCount / 2.0
+    val defenseThreshold = kotlin.math.ceil(aliveCount / 2.0).toInt()
     val isEligibleForDefense = player.isAlive && player.voteCount > 0 && player.voteCount >= defenseThreshold && aliveCount > 0
 
     Card(
@@ -2840,6 +3126,9 @@ fun PlayerLiveCard(
                     if (player.isVoteRevoked) {
                         BadgeLabel(text = "بدون حق رأی ❌", bgColor = Color(0xFF3B1F2A), txtColor = Color(0xFFE57373))
                     }
+                    if (isInDefense && phase == "Day") {
+                        BadgeLabel(text = "دفاع ⚖️", bgColor = Color(0xFF4D1D16), txtColor = Color(0xFFFFB300))
+                    }
 
                     // Direct toggle life state button
                     IconButton(onClick = onToggleLife) {
@@ -2864,7 +3153,7 @@ fun PlayerLiveCard(
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    val formattedThreshold = "%.1f".format(defenseThreshold)
+                    val formattedThreshold = defenseThreshold.toString()
                     Text(
                         text = "🚨 ورود به دفاعیه (رأی کافی: ${player.voteCount} از فرجه $formattedThreshold) ⚖️",
                         color = Color.White,
@@ -5154,13 +5443,13 @@ fun AddCustomRoleDialog(
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
                 .imePadding()
-                .wrapContentHeight()
         ) {
             Column(
                 modifier = Modifier
                     .padding(18.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
@@ -5170,163 +5459,173 @@ fun AddCustomRoleDialog(
                     fontSize = 14.sp
                 )
 
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("نام نقش جدید") },
-                    placeholder = { Text("مثلاً: بمب‌گذار، قهرمان...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = AccentGold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedLabelColor = AccentGold,
-                        unfocusedLabelColor = Color.Gray
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Text(text = "انتخاب جناح نقش:", color = Color.Gray, fontSize = 11.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Scrollable Body Content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    listOf(
-                        "Citizen" to "شهروند 🕊️",
-                        "Mafia" to "مافیا 🕶️",
-                        "Independent" to "مستقل 🎭"
-                    ).forEach { (teamKey, teamTitle) ->
-                        val isSelected = selectedTeam == teamKey
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(
-                                    color = if (isSelected) {
-                                        when (teamKey) {
-                                            "Citizen" -> AccentCitizen.copy(alpha = 0.2f)
-                                            "Mafia" -> AccentCrimson.copy(alpha = 0.2f)
-                                            else -> AccentGold.copy(alpha = 0.2f)
-                                        }
-                                    } else Color(0xFF161626),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) {
-                                        when (teamKey) {
-                                            "Citizen" -> AccentCitizen
-                                            "Mafia" -> AccentCrimson
-                                            else -> AccentGold
-                                        }
-                                    } else BorderColor,
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clickable { selectedTeam = teamKey }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = teamTitle,
-                                color = if (isSelected) Color.White else Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("نام نقش جدید") },
+                        placeholder = { Text("مثلاً: بمب‌گذار، قهرمان...") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AccentGold,
+                            unfocusedBorderColor = BorderColor,
+                            focusedLabelColor = AccentGold,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("توضیحات و ساید نقش") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = AccentGold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedLabelColor = AccentGold,
-                        unfocusedLabelColor = Color.Gray
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                HorizontalDivider(color = BorderColor)
-
-                Text(
-                    text = "انتخاب قابلیت‌های توانمندی این نقش ⚙️:",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                )
-
-                templates.forEach { template ->
-                    val capCount = selectedCaps[template] ?: 0
+                    Text(text = "انتخاب جناح نقش:", color = Color.Gray, fontSize = 11.sp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Checkbox(
-                                checked = capCount > 0,
-                                onCheckedChange = { checked ->
-                                    selectedCaps = if (checked) {
-                                        selectedCaps + (template to 1)
-                                    } else {
-                                        selectedCaps - template
-                                    }
-                                },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = AccentGold,
-                                    uncheckedColor = Color.Gray
+                        listOf(
+                            "Citizen" to "شهروند 🕊️",
+                            "Mafia" to "مافیا 🕶️",
+                            "Independent" to "مستقل 🎭"
+                        ).forEach { (teamKey, teamTitle) ->
+                            val isSelected = selectedTeam == teamKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        color = if (isSelected) {
+                                            when (teamKey) {
+                                                "Citizen" -> AccentCitizen.copy(alpha = 0.2f)
+                                                "Mafia" -> AccentCrimson.copy(alpha = 0.2f)
+                                                else -> AccentGold.copy(alpha = 0.2f)
+                                            }
+                                        } else Color(0xFF161626),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) {
+                                            when (teamKey) {
+                                                "Citizen" -> AccentCitizen
+                                                "Mafia" -> AccentCrimson
+                                                else -> AccentGold
+                                            }
+                                        } else BorderColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedTeam = teamKey }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = teamTitle,
+                                    color = if (isSelected) Color.White else Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
-                            )
-                            Text(text = template, color = Color.White, fontSize = 11.sp)
+                            }
                         }
+                    }
 
-                        if (capCount > 0) {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("توضیحات و ساید نقش") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AccentGold,
+                            unfocusedBorderColor = BorderColor,
+                            focusedLabelColor = AccentGold,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    HorizontalDivider(color = BorderColor)
+
+                    Text(
+                        text = "انتخاب قابلیت‌های توانمندی این نقش ⚙️:",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+
+                    templates.forEach { template ->
+                        val capCount = selectedCaps[template] ?: 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                IconButton(
-                                    onClick = {
-                                        if (capCount > 1) {
-                                            selectedCaps = selectedCaps + (template to (capCount - 1))
+                                Checkbox(
+                                    checked = capCount > 0,
+                                    onCheckedChange = { checked ->
+                                        selectedCaps = if (checked) {
+                                            selectedCaps + (template to 1)
+                                        } else {
+                                            selectedCaps - template
                                         }
                                     },
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color(0xFF1E1E2F), CircleShape)
-                                ) {
-                                    Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Text(
-                                    text = capCount.toString(),
-                                    color = AccentGold,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = AccentGold,
+                                        uncheckedColor = Color.Gray
+                                    )
                                 )
-                                IconButton(
-                                    onClick = {
-                                        selectedCaps = selectedCaps + (template to (capCount + 1))
-                                    },
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color(0xFF1E1E2F), CircleShape)
+                                Text(text = template, color = Color.White, fontSize = 11.sp)
+                            }
+
+                            if (capCount > 0) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("+", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    IconButton(
+                                        onClick = {
+                                            if (capCount > 1) {
+                                                selectedCaps = selectedCaps + (template to (capCount - 1))
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(Color(0xFF1E1E2F), CircleShape)
+                                    ) {
+                                        Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(
+                                        text = capCount.toString(),
+                                        color = AccentGold,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            selectedCaps = selectedCaps + (template to (capCount + 1))
+                                        },
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(Color(0xFF1E1E2F), CircleShape)
+                                    ) {
+                                        Text("+", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
 
+                // Fixed Footer Action buttons
                 Button(
                     onClick = {
                         if (name.isNotBlank()) {
@@ -5392,13 +5691,13 @@ fun RoleCapabilitiesConfigDialog(
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
                 .imePadding()
-                .wrapContentHeight()
         ) {
             Column(
                 modifier = Modifier
                     .padding(18.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
@@ -5448,127 +5747,138 @@ fun RoleCapabilitiesConfigDialog(
 
                 HorizontalDivider(color = BorderColor)
 
-                Text(
-                    text = "انتخاب قابلیت‌های توانمندی این نقش ⚙️:",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                )
-
-                // List existing template options
-                val allOptions = remember(templates, selectedCaps) {
-                    (templates + selectedCaps.keys).distinct()
-                }
-
-                allOptions.forEach { capName ->
-                    val capCount = selectedCaps[capName] ?: 0
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Checkbox(
-                                checked = capCount > 0,
-                                onCheckedChange = { checked ->
-                                    selectedCaps = if (checked) {
-                                        selectedCaps + (capName to 1)
-                                    } else {
-                                        selectedCaps - capName
-                                    }
-                                },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = AccentGold,
-                                    uncheckedColor = Color.Gray
-                                )
-                            )
-                            Text(text = capName, color = Color.White, fontSize = 11.sp)
-                        }
-
-                        if (capCount > 0) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        if (capCount > 1) {
-                                            selectedCaps = selectedCaps + (capName to (capCount - 1))
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color(0xFF1E1E2F), CircleShape)
-                                ) {
-                                    Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Text(
-                                    text = capCount.toString(),
-                                    color = AccentGold,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.width(16.dp),
-                                    textAlign = TextAlign.Center
-                                )
-                                IconButton(
-                                    onClick = {
-                                        selectedCaps = selectedCaps + (capName to (capCount + 1))
-                                    },
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color(0xFF1E1E2F), CircleShape)
-                                ) {
-                                    Text("+", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Add Custom capability section right here inside the dialog
-                Row(
+                // Scrollable container for capabilities list (flex-grow: 1; overflow-y: auto)
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = customCapName,
-                        onValueChange = { customCapName = it },
-                        placeholder = { Text("قابلیت سفارشی جدید...", fontSize = 11.sp, color = Color.Gray) },
-                        maxLines = 1,
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AccentGold,
-                            unfocusedBorderColor = BorderColor
-                        ),
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        text = "انتخاب قابلیت‌های توانمندی این نقش ⚙️:",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(bottom = 4.dp)
                     )
 
-                    IconButton(
-                        onClick = {
-                            if (customCapName.isNotBlank()) {
-                                selectedCaps = selectedCaps + (customCapName.trim() to 1)
-                                customCapName = ""
+                    // List existing template options
+                    val allOptions = remember(templates, selectedCaps) {
+                        (templates + selectedCaps.keys).distinct()
+                    }
+
+                    allOptions.forEach { capName ->
+                        val capCount = selectedCaps[capName] ?: 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Checkbox(
+                                    checked = capCount > 0,
+                                    onCheckedChange = { checked ->
+                                        selectedCaps = if (checked) {
+                                            selectedCaps + (capName to 1)
+                                        } else {
+                                            selectedCaps - capName
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = AccentGold,
+                                        uncheckedColor = Color.Gray
+                                    )
+                                )
+                                Text(text = capName, color = Color.White, fontSize = 11.sp)
                             }
-                        },
+
+                            if (capCount > 0) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            if (capCount > 1) {
+                                                selectedCaps = selectedCaps + (capName to (capCount - 1))
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(Color(0xFF1E1E2F), CircleShape)
+                                    ) {
+                                        Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(
+                                        text = capCount.toString(),
+                                        color = AccentGold,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.width(16.dp),
+                                        textAlign = TextAlign.Center
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            selectedCaps = selectedCaps + (capName to (capCount + 1))
+                                        },
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(Color(0xFF1E1E2F), CircleShape)
+                                    ) {
+                                        Text("+", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Add Custom capability section right here inside the dialog scroll area
+                    Row(
                         modifier = Modifier
-                            .size(40.dp)
-                            .background(AccentGold, RoundedCornerShape(8.dp))
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "اضافه کردن", tint = BackgroundDark)
+                        OutlinedTextField(
+                            value = customCapName,
+                            onValueChange = { customCapName = it },
+                            placeholder = { Text("قابلیت سفارشی جدید...", fontSize = 11.sp, color = Color.Gray) },
+                            maxLines = 1,
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = AccentGold,
+                                unfocusedBorderColor = BorderColor
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        IconButton(
+                            onClick = {
+                                if (customCapName.isNotBlank()) {
+                                    selectedCaps = selectedCaps + (customCapName.trim() to 1)
+                                    customCapName = ""
+                                }
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(AccentGold, RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = "اضافه کردن", tint = BackgroundDark)
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
 
+                // Fixed footer container for action buttons (NEVER scroll)
                 Button(
                     onClick = {
                         val capsList = selectedCaps.map { (capName, count) ->
