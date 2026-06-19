@@ -809,7 +809,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isVoteRevoked = false, // Day ends, vote restriction expires
                         hasBlankGunThisRound = false, // Day to Night cleanup (Part 5)
                         hasLiveGunThisRound = false, // Day to Night cleanup (Part 5)
-                        usedLiveGun = false // Day to Night cleanup (Part 5)
+                        usedLiveGun = false, // Day to Night cleanup (Part 5)
+                        isSilencedThisRound = false
                     )
                 }
                 repository.insertPlayers(updated)
@@ -872,7 +873,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isRevivedThisNight = false,
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
-                    usedLiveGun = false
+                    usedLiveGun = false,
+                    isSilencedThisRound = false
                 )
             }
             repository.insertPlayers(restored)
@@ -998,6 +1000,122 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             // Refresh selected player settings
             if (_selectedPlayerForSettings.value?.id == insurerId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(insurerId)
+            }
+        }
+    }
+
+    fun silencePlayer(psychiatristId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val psych = repository.getPlayerById(psychiatristId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت روانپزشک «${psych.name}» روی او خنثی شد.")
+                return@launch
+            }
+
+            if (psych.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت روانپزشک «${psych.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Check remaining capability count first
+            if (psych.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(psych.capabilitiesJson)
+                    val silenceCap = caps.find { it.name.contains("سکوت") || it.name.contains("سایلنت") || it.name.contains("psychiatrist") }
+                    if (silenceCap != null && silenceCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: روانپزشک دیگر سهمیه سکوت باقی‌مانده ندارد.")
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement capability count
+            if (psych.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(psych.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if ((cap.name.contains("سکوت") || cap.name.contains("سایلنت") || cap.name.contains("psychiatrist")) && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedPsych = psych.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedPsych)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Mark target player as silenced
+            val updatedTarget = target.copy(isSilencedThisRound = true)
+            repository.updatePlayer(updatedTarget)
+            repository.addLog("🧠 روانپزشک «${psych.name}» بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را امشب ساکت (سایلنت) کرد.")
+
+            // Refresh selected player settings
+            if (_selectedPlayerForSettings.value?.id == psychiatristId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(psychiatristId)
+            }
+        }
+    }
+
+    fun unsilencePlayer(priestId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val priest = repository.getPlayerById(priestId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه‌شده است و اثر قابلیت کشیش «${priest.name}» روی او خنثی شد.")
+                return@launch
+            }
+
+            if (priest.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت کشیش «${priest.name}» امشب توسط ماتادور بسته شده است.")
+                return@launch
+            }
+
+            // Check remaining capability count first
+            if (priest.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(priest.capabilitiesJson)
+                    val unsilenceCap = caps.find { it.name.contains("رفع سکوت") || it.name.contains("unsilence") }
+                    if (unsilenceCap != null && unsilenceCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: کشیش دیگر سهمیه رفع سکوت باقی‌مانده ندارد.")
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement capability count
+            if (priest.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(priest.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if ((cap.name.contains("رفع سکوت") || cap.name.contains("unsilence")) && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedPriest = priest.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedPriest)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Mark target player as unsilenced
+            val updatedTarget = target.copy(isSilencedThisRound = false)
+            repository.updatePlayer(updatedTarget)
+            repository.addLog("⛪ کشیش «${priest.name}» سکوت (سایلنت) بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را امشب باطل کرد.")
+
+            // Refresh selected player settings
+            if (_selectedPlayerForSettings.value?.id == priestId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(priestId)
             }
         }
     }

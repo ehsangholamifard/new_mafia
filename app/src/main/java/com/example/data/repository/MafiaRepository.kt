@@ -96,6 +96,13 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     capabilitiesJson = """[{"name":"افشاگری کین 📰","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
+                    name = "کشیش ⛪",
+                    description = "یک بازیکن را انتخاب میکند. اگر آن بازیکن برای فاز روز بعدی سایلنت/خاموش شده باشد، اثر سکوت و برچسب آن را برمیدارد.",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"رفع سکوت ⛪","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["UNSILENCE"]"""
+                ),
+                RoleEntity(
                     name = "شهروند ساده 🕊️",
                     description = "عضو معمولی ارتش شهروندان با قدرت تصمیم‌گیری، نطق و رأی‌دهی بالا",
                     team = "Citizen"
@@ -134,6 +141,13 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     description = "عضو باسابقه مافیا که هر شب می‌تواند قابلیت‌های یکی از بازیکنان را مسدود کند تا او نتواند کاری انجام دهد",
                     team = "Mafia",
                     capabilitiesJson = """[{"name":"مسدود کردن نقش 🧣","totalCount":10,"remainingCount":10}]"""
+                ),
+                RoleEntity(
+                    name = "روانپزشک 🧠",
+                    description = "یک بازیکن را انتخاب میکند تا در فاز روز بعدی حق صحبت کردن نداشته باشد و سایلنت شود.",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"سایلنت / سکوت 🧠","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["SILENCE"]"""
                 ),
                 RoleEntity(
                     name = "هزارچهره 🎭",

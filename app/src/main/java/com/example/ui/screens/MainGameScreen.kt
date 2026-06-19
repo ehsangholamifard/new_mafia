@@ -2341,6 +2341,260 @@ fun PlayStageContent(
                                 }
                             }
 
+                            "SILENCE" -> {
+                                val alivePlayersExceptSelfBySilence = remember(players) {
+                                    players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
+                                }
+                                var silenceTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
+                                var isSilenceTargetMenuExpanded by remember { mutableStateOf(false) }
+                                var silenceAlertMessage by remember { mutableStateOf<String?>(null) }
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "مدیریت سکوت / سایلنت (روانپزشک) 🧠",
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentGold,
+                                        fontSize = 12.sp
+                                    )
+
+                                    val silenceCap = caps.find { it.name.contains("سکوت") || it.name.contains("سایلنت") || it.name.contains("psychiatrist") }
+                                    if (silenceCap != null) {
+                                        Text(
+                                            text = "🧠 تعداد سکوت‌های باقی‌مانده: ${silenceCap.remainingCount} از ${silenceCap.totalCount}",
+                                            color = AccentGold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                            .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                            .clickable { isSilenceTargetMenuExpanded = true }
+                                            .padding(12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val selectedSilenceTarget = alivePlayersExceptSelfBySilence.find { it.id == silenceTargetId }
+                                            Text(
+                                                text = selectedSilenceTarget?.name ?: "انتخاب بازیکن برای سکوت... 👥",
+                                                color = if (selectedSilenceTarget != null) Color.White else Color.Gray,
+                                                fontSize = 12.sp
+                                            )
+                                            Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = isSilenceTargetMenuExpanded,
+                                            onDismissRequest = { isSilenceTargetMenuExpanded = false },
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.85f)
+                                                .background(SurfaceDark)
+                                                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                        ) {
+                                            if (alivePlayersExceptSelfBySilence.isEmpty()) {
+                                                DropdownMenuItem(
+                                                    text = { Text("هیچ بازیکن زنده معتبری یافت نشد", color = Color.Gray, fontSize = 11.sp) },
+                                                    onClick = { isSilenceTargetMenuExpanded = false }
+                                                )
+                                            } else {
+                                                alivePlayersExceptSelfBySilence.forEach { aliveP ->
+                                                     DropdownMenuItem(
+                                                         text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                                         onClick = {
+                                                             silenceTargetId = aliveP.id
+                                                             isSilenceTargetMenuExpanded = false
+                                                         }
+                                                     )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    val hasRemainingSilences = silenceCap == null || silenceCap.remainingCount > 0
+                                    val isSilenceAllowed = !currentItem.player.isBlocked && !currentItem.player.isBlockedThisNight
+                                    val isActionEnabled = silenceTargetId != null && isSilenceAllowed && hasRemainingSilences
+
+                                    Button(
+                                        onClick = {
+                                            val targetId = silenceTargetId
+                                            if (targetId != null) {
+                                                val target = alivePlayersExceptSelfBySilence.find { it.id == targetId }
+                                                if (target != null) {
+                                                    triggerConfirmation(
+                                                        "تایید سکوت بازیکن 🧠",
+                                                        "آیا مطمئن هستید که می‌خواهید بازیکن «${target.name}» را امشب سایلنت کنید؟"
+                                                    ) {
+                                                        viewModel.silencePlayer(currentItem.player.id, target.id)
+                                                        silenceAlertMessage = "بازیکن «${target.name}» با موفقیت برای فاز روز بعدی در حالت سکوت قرار گرفت."
+                                                        silenceTargetId = null
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = isActionEnabled,
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentGold, disabledContainerColor = Color(0xFF1C1C2E)),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("psychiatrist_silence_confirm_button"),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "سکوت کردن بازیکن 🧠",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = if (isActionEnabled) BackgroundDark else Color.Gray
+                                        )
+                                    }
+                                }
+
+                                silenceAlertMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "گزارش سایلنت 🧠",
+                                        message = msg,
+                                        onConfirm = { silenceAlertMessage = null },
+                                        onDismiss = { silenceAlertMessage = null }
+                                    )
+                                }
+                            }
+
+                            "UNSILENCE" -> {
+                                val alivePlayersExceptSelfByUnsilence = remember(players) {
+                                    players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
+                                }
+                                var unsilenceTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
+                                var isUnsilenceTargetMenuExpanded by remember { mutableStateOf(false) }
+                                var unsilenceAlertMessage by remember { mutableStateOf<String?>(null) }
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "مدیریت رفع سکوت (کشیش) ⛪",
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentCitizen,
+                                        fontSize = 12.sp
+                                    )
+
+                                    val unsilenceCap = caps.find { it.name.contains("رفع سکوت") || it.name.contains("unsilence") }
+                                    if (unsilenceCap != null) {
+                                        Text(
+                                            text = "⛪ تعداد رفع سکوت‌های باقی‌مانده: ${unsilenceCap.remainingCount} از ${unsilenceCap.totalCount}",
+                                            color = AccentCitizen,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                            .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                            .clickable { isUnsilenceTargetMenuExpanded = true }
+                                            .padding(12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val selectedUnsilenceTarget = alivePlayersExceptSelfByUnsilence.find { it.id == unsilenceTargetId }
+                                            Text(
+                                                text = selectedUnsilenceTarget?.name ?: "انتخاب بازیکن برای رفع سکوت... 👥",
+                                                color = if (selectedUnsilenceTarget != null) Color.White else Color.Gray,
+                                                fontSize = 12.sp
+                                            )
+                                            Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentCitizen)
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = isUnsilenceTargetMenuExpanded,
+                                            onDismissRequest = { isUnsilenceTargetMenuExpanded = false },
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.85f)
+                                                .background(SurfaceDark)
+                                                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                        ) {
+                                            if (alivePlayersExceptSelfByUnsilence.isEmpty()) {
+                                                DropdownMenuItem(
+                                                    text = { Text("هیچ بازیکن زنده معتبری یافت نشد", color = Color.Gray, fontSize = 11.sp) },
+                                                    onClick = { isUnsilenceTargetMenuExpanded = false }
+                                                )
+                                            } else {
+                                                alivePlayersExceptSelfByUnsilence.forEach { aliveP ->
+                                                     DropdownMenuItem(
+                                                         text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})${if (aliveP.isSilencedThisRound) " [سکوت]" else ""}", color = Color.White, fontSize = 11.sp) },
+                                                         onClick = {
+                                                             unsilenceTargetId = aliveP.id
+                                                             isUnsilenceTargetMenuExpanded = false
+                                                         }
+                                                     )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    val hasRemainingUnsilences = unsilenceCap == null || unsilenceCap.remainingCount > 0
+                                    val isUnsilenceAllowed = !currentItem.player.isBlocked && !currentItem.player.isBlockedThisNight
+                                    val isActionEnabled = unsilenceTargetId != null && isUnsilenceAllowed && hasRemainingUnsilences
+
+                                    Button(
+                                        onClick = {
+                                            val targetId = unsilenceTargetId
+                                            if (targetId != null) {
+                                                val target = alivePlayersExceptSelfByUnsilence.find { it.id == targetId }
+                                                if (target != null) {
+                                                    triggerConfirmation(
+                                                        "تایید رفع سکوت بازیکن ⛪",
+                                                        "آیا مطمئن هستید که می‌خواهید بازیکن «${target.name}» را امشب رفع سکوت کنید؟"
+                                                    ) {
+                                                        viewModel.unsilencePlayer(currentItem.player.id, target.id)
+                                                        unsilenceAlertMessage = "درخواست رفع سکوت برای بازیکن «${target.name}» با موفقیت ثبت شد."
+                                                        unsilenceTargetId = null
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = isActionEnabled,
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentCitizen, disabledContainerColor = Color(0xFF1C1C2E)),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("priest_unsilence_confirm_button"),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "رفع سکوت بازیکن ⛪",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = if (isActionEnabled) Color.White else Color.Gray
+                                        )
+                                    }
+                                }
+
+                                unsilenceAlertMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "گزارش رفع سکوت ⛪",
+                                        message = msg,
+                                        onConfirm = { unsilenceAlertMessage = null },
+                                        onDismiss = { unsilenceAlertMessage = null }
+                                    )
+                                }
+                            }
+
                              "INSURE" -> {
                                 val alivePlayersForInsure = remember(players) {
                                     players.filter { it.isSelected && it.isAlive }
@@ -5003,6 +5257,9 @@ fun PlayerLiveCard(
                     }
                     if (player.isMuted) {
                         BadgeLabel(text = "سایلنت 🔇", bgColor = Color(0xFF2A2A1F), txtColor = AccentGold)
+                    }
+                    if (player.isSilencedThisRound) {
+                        BadgeLabel(text = "سکوت 🧠", bgColor = Color(0xFF271A3C), txtColor = Color(0xFFD8B4FE))
                     }
                     if (player.isSaved) {
                         BadgeLabel(text = "امن 🩺", bgColor = Color(0xFF1F2A21), txtColor = AccentCitizen)

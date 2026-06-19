@@ -82,6 +82,20 @@ val ABILITY_REGISTRY = mapOf(
         description = "وتو کردن رأی‌گیری روزانه و لغو آرای شهروندان",
         nightPriority = 75,
         actionType = "TARGET_ONE_DEAD"
+    ),
+    "SILENCE" to Ability(
+        id = "SILENCE",
+        name = "سکوت / سایلنت (روانپزشک)",
+        description = "یک بازیکن را انتخاب میکند تا در فاز روز بعدی حق صحبت کردن نداشته باشد و سایلنت شود.",
+        nightPriority = 19,
+        actionType = "TARGET_ONE_ALIVE"
+    ),
+    "UNSILENCE" to Ability(
+        id = "UNSILENCE",
+        name = "رفع سکوت (کشیش)",
+        description = "یک بازیکن را انتخاب میکند. اگر آن بازیکن برای فاز روز بعدی سایلنت/خاموش شده باشد، اثر سکوت و برچسب آن را برمیدارد.",
+        nightPriority = 20,
+        actionType = "TARGET_ONE_ALIVE"
     )
 )
 
@@ -95,6 +109,8 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("بیمه") || normalized.contains("insurer") || normalized.contains("insurance") || normalized.contains("insure") -> listOf("INSURE")
         normalized.contains("سلاخ") || normalized.contains("slaughter") -> listOf("SLAUGHTER")
         normalized.contains("ماتادور") || normalized.contains("matador") -> listOf("BLOCK")
+        normalized.contains("روانپزشک") || normalized.contains("psychiatrist") || normalized.contains("silence") || normalized.contains("silent") -> listOf("SILENCE")
+        normalized.contains("کشیش") || normalized.contains("priest") || normalized.contains("unsilence") -> listOf("UNSILENCE")
         normalized.contains("دکتر") || normalized.contains("doctor") || normalized.contains("lector") || normalized.contains("لکتور") -> listOf("HEAL")
         normalized.contains("تفنگدار") || normalized.contains("musketeer") -> listOf("GIVE_GUN")
         normalized.contains("پدرخوانده") || normalized.contains("godfather") || normalized.contains("حرفه‌ای") || normalized.contains("sniper") || normalized.contains("professional") -> listOf("SHOOT")

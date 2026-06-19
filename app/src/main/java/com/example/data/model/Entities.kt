@@ -35,7 +35,8 @@ data class PlayerEntity(
     val isRevivedThisNight: Boolean = false,
     val hasBlankGunThisRound: Boolean = false,
     val hasLiveGunThisRound: Boolean = false,
-    val usedLiveGun: Boolean = false
+    val usedLiveGun: Boolean = false,
+    val isSilencedThisRound: Boolean = false
 )
 
 @Entity(tableName = "roles")
