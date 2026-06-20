@@ -131,6 +131,13 @@ val ABILITY_REGISTRY = mapOf(
         description = "به دنبال نقش شهروندان است. گرداننده نام یک بازیکن و نقش حدس زده شده را وارد میکند. در صورت ۳ حدس اشتباه، ناتو از بازی حذف میشود.",
         nightPriority = 48,
         actionType = "TARGET_PLAYER_AND_ROLE"
+    ),
+    "SABOTAGE" to Ability(
+        id = "SABOTAGE",
+        name = "خرابکاری تفنگ (خرابکار)",
+        description = "یک نفر را انتخاب میکند. اگر آن شخص تفنگ جنگی داشته باشد و در روز شلیک کند، تیر به خودش برمیگردد. روی نقش ساقی بیاثر است.",
+        nightPriority = 35,
+        actionType = "TARGET_ONE_ALIVE"
     )
 )
 
@@ -158,6 +165,7 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("کنستانتین") || normalized.contains("constantine") -> listOf("REVIVE")
         normalized.contains("وتو") || normalized.contains("veto") -> listOf("VETO")
         normalized.contains("ناتو") || normalized.contains("nato") -> listOf("NATO_GUESS")
+        normalized.contains("خرابکار") || normalized.contains("saboteur") || normalized.contains("sabotage") -> listOf("SABOTAGE")
         else -> emptyList()
     }
 }

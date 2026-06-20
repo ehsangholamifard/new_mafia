@@ -185,6 +185,13 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     abilitiesJson = """["NATO_GUESS"]"""
                 ),
                 RoleEntity(
+                    name = "خرابکار 🔫",
+                    description = "یک نفر را انتخاب میکند. اگر آن شخص تفنگ جنگی داشته باشد و در روز شلیک کند، تیر به خودش برمیگردد. روی نقش ساقی بیاثر است.",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"خرابکاری تفنگ (خرابکار) 🔫","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["SABOTAGE"]"""
+                ),
+                RoleEntity(
                     name = "هزارچهره 🎭",
                     description = "شخص مستقل بازی که نقش هر کس که حذف می‌شود را تا شب بعد تصاحب می‌کند",
                     team = "Independent",

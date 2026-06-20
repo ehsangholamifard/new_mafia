@@ -640,12 +640,21 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                 // 📢 Revealing Target Faction Modal
                 val result = targetResultForLiveGun
                 if (result != null) {
-                    StyledConfirmationDialog(
-                        title = "نتیجه شلیک تفنگ جنگی 📢💥",
-                        message = "هدف غرق در خون شد و در دم کشته شد! \n\n👤 نام هدف جدید: «${result.first}»\n🕊️ جناح واقعی او: [${result.second}]",
-                        onConfirm = { targetResultForLiveGun = null },
-                        onDismiss = { targetResultForLiveGun = null }
-                    )
+                    if (result.second == "SABOTAGED") {
+                        StyledConfirmationDialog(
+                            title = "شلیک ناموفق - تفنگ خرابکاری‌شده! ⚠️🔫",
+                            message = "تفنگ خرابکاری شده بود! شلیک به خود «${result.first}» برگشت و او کشته شد.",
+                            onConfirm = { targetResultForLiveGun = null },
+                            onDismiss = { targetResultForLiveGun = null }
+                        )
+                    } else {
+                        StyledConfirmationDialog(
+                            title = "نتیجه شلیک تفنگ جنگی 📢💥",
+                            message = "هدف غرق در خون شد و در دم کشته شد! \n\n👤 نام هدف جدید: «${result.first}»\n🕊️ جناح واقعی او: [${result.second}]",
+                            onConfirm = { targetResultForLiveGun = null },
+                            onDismiss = { targetResultForLiveGun = null }
+                        )
+                    }
                 }
 
                 // Add Custom Role Dialog
@@ -4471,6 +4480,15 @@ fun PlayStageContent(
 
                             "NATO_GUESS" -> {
                                 NatoGuessActionContent(
+                                    currentItem = currentItem,
+                                    players = players,
+                                    caps = caps,
+                                    viewModel = viewModel
+                                )
+                            }
+
+                            "SABOTAGE" -> {
+                                SabotageActionContent(
                                     currentItem = currentItem,
                                     players = players,
                                     caps = caps,
@@ -10161,4 +10179,153 @@ fun NatoGuessActionContent(
         )
     }
 }
+
+@Composable
+fun SabotageActionContent(
+    currentItem: com.example.data.model.NightActionQueueItem,
+    players: List<PlayerEntity>,
+    caps: List<RoleCapability>,
+    viewModel: com.example.data.viewmodel.MafiaViewModel
+) {
+    val alivePlayers = remember(players) {
+        players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
+    }
+    var selectedTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
+    var isTargetMenuExpanded by remember { mutableStateOf(false) }
+    var sabotageAlertMessage by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+            .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "خرابکاری تفنگ (خرابکار) 🔫",
+            fontWeight = FontWeight.Bold,
+            color = AccentCrimson,
+            fontSize = 12.sp
+        )
+
+        val sabotageCap = caps.find { it.name.contains("خرابکاری") || it.name.contains("sabotage") }
+        if (sabotageCap != null) {
+            Text(
+                text = "🔫 تعداد خرابکاری‌های باقی‌مانده: ${sabotageCap.remainingCount} از ${sabotageCap.totalCount}",
+                color = AccentGold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Text(
+            text = "انتخاب بازیکن جهت خرابکاری تفنگ:",
+            color = Color.LightGray,
+            fontSize = 11.sp
+        )
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            val currentSelectedPlayer = alivePlayers.find { it.id == selectedTargetId }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F0F18), RoundedCornerShape(8.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .clickable { isTargetMenuExpanded = true }
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = currentSelectedPlayer?.name ?: "انتخاب بازیکن...",
+                    color = if (currentSelectedPlayer != null) Color.White else Color.Gray,
+                    fontSize = 11.sp
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = Color.Gray
+                )
+            }
+
+            DropdownMenu(
+                expanded = isTargetMenuExpanded,
+                onDismissRequest = { isTargetMenuExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .background(SurfaceDark)
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+            ) {
+                if (alivePlayers.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("هیچ بازیکن زنده معتبری وجود ندارد.", color = Color.Gray, fontSize = 11.sp) },
+                        onClick = { isTargetMenuExpanded = false }
+                    )
+                } else {
+                    alivePlayers.forEach { p ->
+                        DropdownMenuItem(
+                            text = { Text(p.name, color = Color.White, fontSize = 11.sp) },
+                            onClick = {
+                                selectedTargetId = p.id
+                                isTargetMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        val isSaboteurBlocked = currentItem.player.isBlocked || currentItem.player.isBlockedThisNight
+        val hasRemainingSabotage = sabotageCap == null || sabotageCap.remainingCount > 0
+        val isConfirmEnabled = selectedTargetId != null && !isSaboteurBlocked && hasRemainingSabotage
+
+        Button(
+            onClick = {
+                val targetId = selectedTargetId
+                if (targetId != null) {
+                    val target = alivePlayers.find { it.id == targetId }
+                    if (target != null) {
+                        viewModel.executeSabotage(
+                            currentItem.player.id,
+                            target.id
+                        ) { resultMessage ->
+                            sabotageAlertMessage = resultMessage
+                            selectedTargetId = null
+                        }
+                    }
+                }
+            },
+            enabled = isConfirmEnabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = AccentCrimson,
+                disabledContainerColor = Color(0xFF1E1E2D)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .testTag("sabotage_confirm_button"),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = if (isSaboteurBlocked) "🚫 مسدود شده‌اید" else "تایید خرابکاری تفنگ 🔫",
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = if (isConfirmEnabled) Color.White else Color.Gray
+            )
+        }
+    }
+
+    sabotageAlertMessage?.let { msg ->
+        StyledConfirmationDialog(
+            title = "نتیجه خرابکاری تفنگ 🔫",
+            message = msg,
+            onConfirm = { sabotageAlertMessage = null },
+            onDismiss = { sabotageAlertMessage = null }
+        )
+    }
+}
+
 

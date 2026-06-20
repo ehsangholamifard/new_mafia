@@ -854,7 +854,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         hasBlankGunThisRound = false, // Day to Night cleanup (Part 5)
                         hasLiveGunThisRound = false, // Day to Night cleanup (Part 5)
                         usedLiveGun = false, // Day to Night cleanup (Part 5)
-                        isSilencedThisRound = false
+                        isSilencedThisRound = false,
+                        isSabotaged = false
                     )
                 }
                 repository.insertPlayers(updated)
@@ -1992,6 +1993,62 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun executeSabotage(
+        saboteurId: Int,
+        targetId: Int,
+        onResult: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val saboteur = repository.getPlayerById(saboteurId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+
+            if (saboteur.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت خرابکار «${saboteur.name}» امشب توسط ماتادور بسته شده است.")
+                viewModelScope.launch(Dispatchers.Main) { onResult("فعالیت خرابکار مسدود شده بود.") }
+                return@launch
+            }
+
+            // Decrement remaining count of capabilitiesJson of saboteur
+            if (saboteur.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(saboteur.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("خرابکاری") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedSaboteur = saboteur.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedSaboteur)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن «${target.name}» امشب بیمه است و خرابکاری روی او بی‌اثر شد.")
+                viewModelScope.launch(Dispatchers.Main) { onResult("بازیکن هدف بیمه بود و خرابکاری ناموفق ماند.") }
+                return@launch
+            }
+
+            val targetRoleName = target.assignedRoleName ?: ""
+            if (targetRoleName.contains("ساقی")) {
+                repository.addLog("🍷 اقدام ناموفق: ساقی از خرابکاری تفنگ مصون است. خرابکاری تفنگ بر روی بازیکن «${target.name}» بی اثر ماند.")
+                viewModelScope.launch(Dispatchers.Main) { onResult("ساقی در برابر خرابکاری تفنگ مصونیت دارد.") }
+                return@launch
+            }
+
+            val finalTarget = target.copy(isSabotaged = true)
+            repository.updatePlayer(finalTarget)
+            repository.addLog("🔫 خرابکار «${saboteur.name}» تفنگ بازیکن «${target.name}» را خرابکاري کرد.")
+            viewModelScope.launch(Dispatchers.Main) { onResult("خرابکاری تفنگ با موفقیت روی بازیکن انجام شد.") }
+
+            if (_selectedPlayerForSettings.value?.id == saboteurId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(saboteurId)
+            }
+        }
+    }
+
     fun executeVeto(vetoPlayerId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val vetoPlayer = repository.getPlayerById(vetoPlayerId) ?: return@launch
@@ -2280,22 +2337,34 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val shooter = repository.getPlayerById(shooterId) ?: return@launch
             val target = repository.getPlayerById(targetId) ?: return@launch
 
-            val updatedShooter = shooter.copy(usedLiveGun = true)
-            repository.updatePlayer(updatedShooter)
+            if (shooter.isSabotaged) {
+                // Victim survives, shooter is eliminated instead
+                val killedShooter = shooter.copy(isAlive = false, isSabotaged = false, usedLiveGun = true)
+                repository.updatePlayer(killedShooter)
 
-            val deadTarget = target.copy(isAlive = false)
-            repository.updatePlayer(deadTarget)
+                repository.addLog("💥 تفنگ خرابکاری شده بود! شلیک تفنگ جنگی به خود بازیکن «${shooter.name}» برگشت و او کشته شد.")
 
-            val factionLabel = when (target.assignedRoleTeam) {
-                "Mafia" -> "مافیا"
-                "Citizen" -> "شهروند"
-                else -> "مستقل"
-            }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult(shooter.name, "SABOTAGED")
+                }
+            } else {
+                val updatedShooter = shooter.copy(usedLiveGun = true)
+                repository.updatePlayer(updatedShooter)
 
-            repository.addLog("💥 شلیک تفنگ جنگی: بازیکن «${shooter.name}» با تفنگ جنگی به سمت بازیکن «${target.name}» شلیک کرد و او را کشت! (جناح هدف: $factionLabel)")
+                val deadTarget = target.copy(isAlive = false)
+                repository.updatePlayer(deadTarget)
 
-            viewModelScope.launch(Dispatchers.Main) {
-                onResult(target.name, factionLabel)
+                val factionLabel = when (target.assignedRoleTeam) {
+                    "Mafia" -> "مافیا"
+                    "Citizen" -> "شهروند"
+                    else -> "مستقل"
+                }
+
+                repository.addLog("💥 شلیک تفنگ جنگی: بازیکن «${shooter.name}» با تفنگ جنگی به سمت بازیکن «${target.name}» شلیک کرد و او را کشت! (جناح هدف: $factionLabel)")
+
+                viewModelScope.launch(Dispatchers.Main) {
+                    onResult(target.name, factionLabel)
+                }
             }
         }
     }
