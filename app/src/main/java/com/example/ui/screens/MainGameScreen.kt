@@ -79,6 +79,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val players by viewModel.players.collectAsStateWithLifecycle()
         val roles by viewModel.roles.collectAsStateWithLifecycle()
         val logs by viewModel.gameLogs.collectAsStateWithLifecycle()
+        val currentRound = remember(logs) {
+            logs.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
+        }
         val stage by viewModel.gameStage.collectAsStateWithLifecycle()
         val phase by viewModel.gamePhase.collectAsStateWithLifecycle()
         val selectedPlayerSettings by viewModel.selectedPlayerForSettings.collectAsStateWithLifecycle()
@@ -89,6 +92,8 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val remainingInquiries by viewModel.remainingInquiries.collectAsStateWithLifecycle()
         val moderatorName by viewModel.moderatorName.collectAsStateWithLifecycle()
         val musketeerLiveGunExhausted by viewModel.musketeerLiveGunExhausted.collectAsStateWithLifecycle()
+        val sagiCooldownNight by viewModel.sagiCooldownNight.collectAsStateWithLifecycle()
+        val sagiPastTargets by viewModel.sagiPastTargets.collectAsStateWithLifecycle()
 
         var showCapabilitiesTemplateDialog by remember { mutableStateOf(false) }
         var showExportImportDialog by remember { mutableStateOf(false) }
@@ -1824,6 +1829,12 @@ fun PlayStageContent(
     viewModel: MafiaViewModel,
     musketeerLiveGunExhausted: Boolean
 ) {
+    val sagiCooldownNight by viewModel.sagiCooldownNight.collectAsStateWithLifecycle()
+    val sagiPastTargets by viewModel.sagiPastTargets.collectAsStateWithLifecycle()
+    val currentRound = remember(logs) {
+        logs.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
+    }
+
     var showLogsStream by remember { mutableStateOf(true) }
 
     var isVotingCompleted by remember(phase) { mutableStateOf(false) }
@@ -2337,6 +2348,362 @@ fun PlayStageContent(
                                         message = msg,
                                         onConfirm = { vetoAlertMessage = null },
                                         onDismiss = { vetoAlertMessage = null }
+                                    )
+                                }
+                            }
+
+                            "HACK" -> {
+                                val alivePlayersExceptSelfByHacker = remember(players) {
+                                    players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
+                                }
+                                val selectedHackerTargets = remember { mutableStateListOf<Int>() }
+                                var hackerAlertMessage by remember { mutableStateOf<String?>(null) }
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "استعلام هکر 📡",
+                                            fontWeight = FontWeight.Bold,
+                                            color = AccentCitizen,
+                                            fontSize = 12.sp
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFFFFAD1F).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${selectedHackerTargets.size} از ۳ انتخاب شده",
+                                                color = Color(0xFFFFAD1F),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    val hackCap = caps.find { it.name.contains("هکر") || it.name.contains("استعلام") }
+                                    if (hackCap != null) {
+                                        Text(
+                                            text = "📡 تعداد استعلام‌های باقی‌مانده: ${hackCap.remainingCount} از ${hackCap.totalCount}",
+                                            color = AccentCitizen,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    // Reminder / Note
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2D)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(8.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info,
+                                                contentDescription = null,
+                                                tint = Color(0xFF5AB2FF),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "توجه: این قابلیت معمولاً فقط در شب دوم بازی استفاده می‌شود.",
+                                                color = Color.LightGray,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "۳ بازیکن متمایز انتخاب فرمایید:",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 200.dp)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        if (alivePlayersExceptSelfByHacker.isEmpty()) {
+                                            Text(
+                                                text = "هیچ بازیکن زنده معتبری وجود ندارد.",
+                                                color = Color.Gray,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(vertical = 4.dp)
+                                            )
+                                        } else {
+                                            alivePlayersExceptSelfByHacker.forEach { p ->
+                                                val isChecked = selectedHackerTargets.contains(p.id)
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .background(
+                                                            if (isChecked) Color(0xFF1B2A3A) else Color(0xFF161622),
+                                                            RoundedCornerShape(8.dp)
+                                                        )
+                                                        .border(
+                                                            1.dp,
+                                                            if (isChecked) AccentCitizen.copy(alpha = 0.5f) else Color.Transparent,
+                                                            RoundedCornerShape(8.dp)
+                                                        )
+                                                        .clickable {
+                                                            if (isChecked) {
+                                                                selectedHackerTargets.remove(p.id)
+                                                            } else {
+                                                                if (selectedHackerTargets.size < 3) {
+                                                                    selectedHackerTargets.add(p.id)
+                                                                }
+                                                            }
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Checkbox(
+                                                        checked = isChecked,
+                                                        onCheckedChange = { checked ->
+                                                            if (!checked) {
+                                                                selectedHackerTargets.remove(p.id)
+                                                            } else {
+                                                                if (selectedHackerTargets.size < 3) {
+                                                                    selectedHackerTargets.add(p.id)
+                                                                }
+                                                            }
+                                                        },
+                                                        colors = CheckboxDefaults.colors(checkedColor = AccentCitizen)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = p.name,
+                                                        color = if (isChecked) Color.White else Color.LightGray,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.weight(1f))
+                                                    Text(
+                                                        text = p.assignedRoleName ?: "بدون نقش",
+                                                        color = Color.Gray,
+                                                        fontSize = 10.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    val isHackerAllowed = !currentItem.player.isBlocked && !currentItem.player.isBlockedThisNight
+                                    val isActionEnabled = selectedHackerTargets.size == 3 && isHackerAllowed && (hackCap == null || hackCap.remainingCount > 0)
+
+                                    Button(
+                                        onClick = {
+                                            if (selectedHackerTargets.size == 3) {
+                                                val targetNames = selectedHackerTargets.mapNotNull { tid ->
+                                                    alivePlayersExceptSelfByHacker.find { it.id == tid }?.name
+                                                }.joinToString("، ")
+                                                
+                                                triggerConfirmation(
+                                                    "تایید استعلام هکر 📡",
+                                                    "آیا از بررسی وضعیت بازیکنان [$targetNames] اطمینان دارید؟"
+                                                ) {
+                                                    viewModel.hackerScan(currentItem.player.id, selectedHackerTargets.toList()) { success, resultText ->
+                                                        if (success) {
+                                                            hackerAlertMessage = resultText
+                                                        } else {
+                                                            hackerAlertMessage = "خطا در استعلام: $resultText"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = isActionEnabled,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = AccentCitizen,
+                                            disabledContainerColor = Color(0xFF1C1C2E)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("hacker_confirm_button"),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "ارسال استعلام 📡",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = if (isActionEnabled) Color.White else Color.Gray
+                                        )
+                                    }
+                                }
+
+                                hackerAlertMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "نتیجه استعلام هکر 📡",
+                                        message = msg,
+                                        onConfirm = { hackerAlertMessage = null },
+                                        onDismiss = { hackerAlertMessage = null }
+                                    )
+                                }
+                            }
+
+                            "INTOXICATE" -> {
+                                val alivePlayers = remember(players) {
+                                    players.filter { it.isSelected && it.isAlive }
+                                }
+                                var selectedTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
+                                var isTargetMenuExpanded by remember { mutableStateOf(false) }
+                                var sagiAlertMessage by remember { mutableStateOf<String?>(null) }
+                                var intoxicateAlertMessage by remember { mutableStateOf<String?>(null) }
+
+                                val isCooldownActive = currentRound == sagiCooldownNight
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (isCooldownActive) {
+                                        Text(
+                                            text = "قابلیت ساقی در این شب غیرفعال است (یک شب در میان).",
+                                            color = AccentCrimson,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(vertical = 4.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "انتخاب هدف برای مستی 🍷:",
+                                            color = Color.LightGray,
+                                            fontSize = 11.sp
+                                        )
+
+                                        Box(modifier = Modifier.fillMaxWidth()) {
+                                            val currentSelectedPlayer = alivePlayers.find { it.id == selectedTargetId }
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(Color(0xFF0F0F18), RoundedCornerShape(8.dp))
+                                                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                                    .clickable { isTargetMenuExpanded = true }
+                                                    .padding(12.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = currentSelectedPlayer?.name ?: "لطفاً بازیکن مورد نظر را انتخاب کنید...",
+                                                    color = if (currentSelectedPlayer != null) Color.White else Color.Gray,
+                                                    fontSize = 11.sp
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Default.ArrowDropDown,
+                                                    contentDescription = "باز کردن لیست",
+                                                    tint = Color.Gray
+                                                )
+                                            }
+
+                                            DropdownMenu(
+                                                expanded = isTargetMenuExpanded,
+                                                onDismissRequest = { isTargetMenuExpanded = false },
+                                                modifier = Modifier
+                                                    .fillMaxWidth(0.9f)
+                                                    .background(Color(0xFF13131F))
+                                                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                            ) {
+                                                alivePlayers.forEach { p ->
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                Text(p.name, color = Color.White, fontSize = 11.sp)
+                                                                if (sagiPastTargets.contains(p.id)) {
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Text("قبلاً انتخاب شده ⚠️", color = AccentCrimson, fontSize = 9.sp)
+                                                                }
+                                                            }
+                                                        },
+                                                        onClick = {
+                                                            isTargetMenuExpanded = false
+                                                            if (sagiPastTargets.contains(p.id)) {
+                                                                sagiAlertMessage = "ساقی نمیتواند یک نفر را دوباره انتخاب کند!"
+                                                            } else {
+                                                                selectedTargetId = p.id
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        val isSagiAllowed = !currentItem.player.isBlocked && !currentItem.player.isBlockedThisNight
+                                        val isActionEnabled = selectedTargetId != null && isSagiAllowed
+
+                                        Button(
+                                            onClick = {
+                                                val selTarget = alivePlayers.find { it.id == selectedTargetId }
+                                                if (selTarget != null) {
+                                                    triggerConfirmation(
+                                                        "تایید مستی ساقی 🍷",
+                                                        "آیا مطمئن هستید که می‌خواهید بازیکن «${selTarget.name}» را امشب مست کنید؟"
+                                                    ) {
+                                                        viewModel.intoxicatePlayer(
+                                                            currentItem.player.id,
+                                                            selTarget.id,
+                                                            currentRound
+                                                        ) { success, resultText ->
+                                                            intoxicateAlertMessage = resultText
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            enabled = isActionEnabled,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = AccentGold,
+                                                disabledContainerColor = Color(0xFF1C1C2E)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth().height(38.dp).testTag("sagi_confirm_button"),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "ثبت مست کردن شبانه 🍷",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                color = if (isActionEnabled) BackgroundDark else Color.Gray
+                                            )
+                                        }
+                                    }
+                                }
+
+                                sagiAlertMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "خطای ساقی 🍷",
+                                        message = msg,
+                                        onConfirm = { sagiAlertMessage = null },
+                                        onDismiss = { sagiAlertMessage = null }
+                                    )
+                                }
+
+                                intoxicateAlertMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "عملکرد ساقی 🍷",
+                                        message = msg,
+                                        onConfirm = { intoxicateAlertMessage = null },
+                                        onDismiss = { intoxicateAlertMessage = null }
                                     )
                                 }
                             }

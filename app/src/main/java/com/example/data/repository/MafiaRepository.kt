@@ -97,7 +97,7 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                 ),
                 RoleEntity(
                     name = "کشیش ⛪",
-                    description = "یک بازیکن را انتخاب میکند. اگر آن بازیکن برای فاز روز بعدی سایلنت/خاموش شده باشد، اثر سکوت و برچسب آن را برمیدارد.",
+                    description = "کشیش باید تشخیص بدهد که چه کسی توسط مافیا سایلنت شده و او را از سایلنت بودن خارج کند.",
                     team = "Citizen",
                     capabilitiesJson = """[{"name":"رفع سکوت ⛪","totalCount":10,"remainingCount":10}]""",
                     abilitiesJson = """["UNSILENCE"]"""
@@ -144,10 +144,24 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                 ),
                 RoleEntity(
                     name = "روانپزشک 🧠",
-                    description = "یک بازیکن را انتخاب میکند تا در فاز روز بعدی حق صحبت کردن نداشته باشد و سایلنت شود.",
-                    team = "Mafia",
+                    description = "روانپزشک میتواند به انتخاب خودش، مافیا یا هر کسی که دارد به روند بازی لطمه میزند را ساکت کند.",
+                    team = "Citizen",
                     capabilitiesJson = """[{"name":"سایلنت / سکوت 🧠","totalCount":10,"remainingCount":10}]""",
                     abilitiesJson = """["SILENCE"]"""
+                ),
+                RoleEntity(
+                    name = "هکر 📡",
+                    description = "سه نفر را انتخاب میکند. اگر دقیقاً یک مافیا در بین آنها باشد، لیست خطرناک است. توجه: این قابلیت معمولاً فقط در شب دوم بازی استفاده می‌شود.",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"استعلام هکر 📡","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["HACK"]"""
+                ),
+                RoleEntity(
+                    name = "ساقی 🍷",
+                    description = "یک نفر (حتی خودش) را انتخاب میکند تا قابلیت شبانهاش مسدود شود. یک شب در میان استفاده میشود و هدف تکراری مجاز نیست.",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"مستی / ساقی 🍷","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["INTOXICATE"]"""
                 ),
                 RoleEntity(
                     name = "هزارچهره 🎭",

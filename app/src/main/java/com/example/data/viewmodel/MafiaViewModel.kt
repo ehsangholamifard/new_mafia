@@ -102,6 +102,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _musketeerLiveGunExhausted = MutableStateFlow(false)
     val musketeerLiveGunExhausted: StateFlow<Boolean> = _musketeerLiveGunExhausted.asStateFlow()
 
+    private val _sagiCooldownNight = MutableStateFlow(0)
+    val sagiCooldownNight: StateFlow<Int> = _sagiCooldownNight.asStateFlow()
+
+    private val _sagiPastTargets = MutableStateFlow<List<Int>>(emptyList())
+    val sagiPastTargets: StateFlow<List<Int>> = _sagiPastTargets.asStateFlow()
+
     fun setMusketeerLiveGunExhausted(exhausted: Boolean) {
         _musketeerLiveGunExhausted.value = exhausted
     }
@@ -880,6 +886,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertPlayers(restored)
             repository.clearLogs()
             _musketeerLiveGunExhausted.value = false
+            _sagiCooldownNight.value = 0
+            _sagiPastTargets.value = emptyList()
             _remainingInquiries.value = _totalInquiries.value
             _gameStage.value = "SETUP"
             _gamePhase.value = "Night"
@@ -1116,6 +1124,174 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             // Refresh selected player settings
             if (_selectedPlayerForSettings.value?.id == priestId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(priestId)
+            }
+        }
+    }
+
+    fun hackerScan(hackerId: Int, playerIds: List<Int>, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val hacker = repository.getPlayerById(hackerId) ?: return@launch
+            
+            if (hacker.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: هکر «${hacker.name}» امشب توسط ماتادور مسدود شده بود و استعلام ناموفق ماند.")
+                withContext(Dispatchers.Main) {
+                    onResult(false, "مسدودیت امشب: قابلیت شما توسط ماتادور غیرفعال شده است.")
+                }
+                return@launch
+            }
+
+            val targets = playerIds.mapNotNull { repository.getPlayerById(it) }
+            if (targets.size < 3) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "خطا: باید دقیقاً ۳ بازیکن زنده برای هک انتخاب شوند.")
+                }
+                return@launch
+            }
+
+            // Check remaining capability count first
+            if (hacker.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(hacker.capabilitiesJson)
+                    val hackCap = caps.find { it.name.contains("هکر") || it.name.contains("استعلام") }
+                    if (hackCap != null && hackCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: هکر دیگر سهمیه استعلام باقی‌مانده ندارد.")
+                        withContext(Dispatchers.Main) {
+                            onResult(false, "خطا: سهمیه استعلام شما به پایان رسیده است.")
+                        }
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement capability count
+            if (hacker.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(hacker.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if ((cap.name.contains("هکر") || cap.name.contains("استعلام")) && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedHacker = hacker.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedHacker)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Count Mafia members
+            val mafiaCount = targets.count { target ->
+                target.assignedRoleTeam?.lowercase()?.contains("mafia") == true || target.note.lowercase().contains("mafia")
+            }
+
+            val isDangerous = mafiaCount == 1
+            val resultMessage = if (isDangerous) {
+                "لیست خطرناک است (یک مافیا وجود دارد)"
+            } else {
+                "لیست خطرناک نیست (هیچ یا بیش از یک مافیا وجود دارد)"
+            }
+
+            repository.addLog("📡 هکر «${hacker.name}» بازیکنان [${targets.joinToString { it.name }}] را استعلام کرد. نتیجه: $resultMessage")
+
+            withContext(Dispatchers.Main) {
+                onResult(true, resultMessage)
+            }
+
+            // Refresh selected player settings
+            if (_selectedPlayerForSettings.value?.id == hackerId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(hackerId)
+            }
+        }
+    }
+
+    fun intoxicatePlayer(sagiId: Int, targetId: Int, currentRound: Int, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sagi = repository.getPlayerById(sagiId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+            
+            if (sagi.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: ساقی «${sagi.name}» امشب توسط ماتادور مسدود شده بود و مست کردن ناموفق ماند.")
+                withContext(Dispatchers.Main) {
+                    onResult(false, "مسدودیت امشب: قابلیت شما توسط ماتادور غیرفعال شده است.")
+                }
+                return@launch
+            }
+
+            // check if cooldown night matches currentRound
+            if (currentRound == _sagiCooldownNight.value) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "قابلیت ساقی در این شب غیرفعال است (یک شب در میان).")
+                }
+                return@launch
+            }
+
+            // Check if déjà vu target
+            if (_sagiPastTargets.value.contains(targetId)) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "ساقی نمیتواند یک نفر را دوباره انتخاب کند!")
+                }
+                return@launch
+            }
+
+            // Check standard capabilities counts if any
+            if (sagi.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(sagi.capabilitiesJson)
+                    val intoxCap = caps.find { it.name.contains("ساقی") || it.name.contains("مستی") }
+                    if (intoxCap != null && intoxCap.remainingCount <= 0) {
+                        repository.addLog("⚠️ خطا: ساقی دیگر سهمیه مستی باقی‌مانده ندارد.")
+                        withContext(Dispatchers.Main) {
+                            onResult(false, "خطا: سهمیه مستی شما به پایان رسیده است.")
+                        }
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Decrement remaining count
+            if (sagi.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(sagi.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if ((cap.name.contains("ساقی") || cap.name.contains("مستی")) && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedSagi = sagi.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedSagi)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            val isActionPreventedByInsurance = target.isInsuredThisNight
+            val finalMsg = if (isActionPreventedByInsurance) {
+                repository.addLog("🛡️ مست کردن ساقی «${sagi.name}» روی «${target.name}» به علت بیمه بی‌اثر شد.")
+                "مست کردن بازیکن «${target.name}» با موفقیت ثبت شد (توسط بیمه خنثی شد)."
+            } else {
+                val updatedTarget = target.copy(isBlockedThisNight = true)
+                repository.updatePlayer(updatedTarget)
+                repository.addLog("🍷 ساقی «${sagi.name}» بازیکن «${target.name}» را مست (مسدود) کرد.")
+                "بازیکن «${target.name}» با موفقیت مست و قابلیت شب وی مسدود گردید."
+            }
+
+            // Update Sagi constraints
+            _sagiPastTargets.value = _sagiPastTargets.value + targetId
+            _sagiCooldownNight.value = currentRound + 1
+
+            withContext(Dispatchers.Main) {
+                onResult(true, finalMsg)
+            }
+
+            // Refresh selected player settings
+            if (_selectedPlayerForSettings.value?.id == sagiId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(sagiId)
             }
         }
     }
