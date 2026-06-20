@@ -110,6 +110,20 @@ val ABILITY_REGISTRY = mapOf(
         description = "یک نفر (حتی خودش) را انتخاب میکند تا قابلیت شبانهاش مسدود شود. یک شب در میان استفاده میشود و هدف تکراری مجاز نیست.",
         nightPriority = 11,
         actionType = "TARGET_ONE_ALIVE"
+    ),
+    "GRAVEDIG" to Ability(
+        id = "GRAVEDIG",
+        name = "نبش قبر (گورکن)",
+        description = "در شب اعلام میکند که میخواهد نبش قبر کند. روز بعد، گاد نقش تمامی بازیکنانی که تا این لحظه از بازی حذف شدهاند را به صورت عمومی اعلام میکند.",
+        nightPriority = 80,
+        actionType = "NO_TARGET"
+    ),
+    "TERROR" to Ability(
+        id = "TERROR",
+        name = "ترور در روز (تروریست)",
+        description = "هنگام خروج با رایگیری در روز، میتواند یک بازیکن زنده دیگر را همراه خود حذف کند. اگر شب قبل توسط ساقی مسدود شده باشد، این قابلیت کار نمیکند.",
+        nightPriority = 0,
+        actionType = "DAY_EXECUTION_REACTION"
     )
 )
 
@@ -125,6 +139,8 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("ماتادور") || normalized.contains("matador") -> listOf("BLOCK")
         normalized.contains("روانپزشک") || normalized.contains("psychiatrist") || normalized.contains("silence") || normalized.contains("silent") -> listOf("SILENCE")
         normalized.contains("ساقی") || normalized.contains("sagi") || normalized.contains("intoxicate") -> listOf("INTOXICATE")
+        normalized.contains("گورکن") || normalized.contains("gravedigger") || normalized.contains("gravedig") -> listOf("GRAVEDIG")
+        normalized.contains("تروریست") || normalized.contains("terrorist") || normalized.contains("terror") -> listOf("TERROR")
         normalized.contains("کشیش") || normalized.contains("priest") || normalized.contains("unsilence") -> listOf("UNSILENCE")
         normalized.contains("هکر") || normalized.contains("hacker") || normalized.contains("hack") -> listOf("HACK")
         normalized.contains("دکتر") || normalized.contains("doctor") || normalized.contains("lector") || normalized.contains("لکتور") -> listOf("HEAL")

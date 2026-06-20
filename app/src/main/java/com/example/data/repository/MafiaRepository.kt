@@ -164,6 +164,20 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     abilitiesJson = """["INTOXICATE"]"""
                 ),
                 RoleEntity(
+                    name = "گورکن 🪦",
+                    description = "در شب اعلام میکند که میخواهد نبش قبر کند. روز بعد، گاد نقش تمامی بازیکنانی که تا این لحظه از بازی حذف شدهاند را به صورت عمومی اعلام میکند.",
+                    team = "Citizen",
+                    capabilitiesJson = """[{"name":"نبش قبر 🪦","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["GRAVEDIG"]"""
+                ),
+                RoleEntity(
+                    name = "تروریست 💣",
+                    description = "هنگام خروج با رایگیری در روز، میتواند یک بازیکن زنده دیگر را همراه خود حذف کند. اگر شب قبل توسط ساقی مسدود شده باشد، این قابلیت کار نمیکند.",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"ترور در روز 💣","totalCount":1,"remainingCount":1}]""",
+                    abilitiesJson = """["TERROR"]"""
+                ),
+                RoleEntity(
                     name = "هزارچهره 🎭",
                     description = "شخص مستقل بازی که نقش هر کس که حذف می‌شود را تا شب بعد تصاحب می‌کند",
                     team = "Independent",

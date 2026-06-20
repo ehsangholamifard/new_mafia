@@ -14,7 +14,7 @@ import com.example.data.model.GameHistoryEntity
 
 @Database(
     entities = [PlayerEntity::class, RoleEntity::class, GameLogEntity::class, GameHistoryEntity::class],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -110,6 +110,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE players ADD COLUMN wasBlockedLastNight INTEGER NOT NULL DEFAULT 0")
+                } catch (e: Exception) {
+                    // ignore if already exists
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -120,7 +130,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, 
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13
                     )
                     .fallbackToDestructiveMigration()
                     .build()

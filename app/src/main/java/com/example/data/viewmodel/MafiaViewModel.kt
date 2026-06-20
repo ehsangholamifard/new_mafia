@@ -108,6 +108,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _sagiPastTargets = MutableStateFlow<List<Int>>(emptyList())
     val sagiPastTargets: StateFlow<List<Int>> = _sagiPastTargets.asStateFlow()
 
+    private val _isGravedigActiveThisNight = MutableStateFlow(false)
+    val isGravedigActiveThisNight: StateFlow<Boolean> = _isGravedigActiveThisNight.asStateFlow()
+
+    fun setGravedigActive(active: Boolean) {
+        _isGravedigActiveThisNight.value = active
+    }
+
     fun setMusketeerLiveGunExhausted(exhausted: Boolean) {
         _musketeerLiveGunExhausted.value = exhausted
     }
@@ -671,6 +678,29 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun executeTerroristAction(terroristId: Int, victimId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val terrorist = repository.getPlayerById(terroristId)
+            val victim = repository.getPlayerById(victimId)
+            if (terrorist != null) {
+                val updatedTerrorist = terrorist.copy(isAlive = false)
+                repository.updatePlayer(updatedTerrorist)
+                repository.addLog("💀 بازیکن «${terrorist.name}» (تروریست) با رای مجلس از بازی حذف شد.")
+                if (_selectedPlayerForSettings.value?.id == terroristId) {
+                    _selectedPlayerForSettings.value = updatedTerrorist
+                }
+            }
+            if (victim != null) {
+                val updatedVictim = victim.copy(isAlive = false)
+                repository.updatePlayer(updatedVictim)
+                repository.addLog("💥 تروریست عملیات انتحاری انجام داد و «${victim.name}» را با خود برد!")
+                if (_selectedPlayerForSettings.value?.id == victimId) {
+                    _selectedPlayerForSettings.value = updatedVictim
+                }
+            }
+        }
+    }
+
     fun revivePlayerWithReason(id: Int, reasonType: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val p = repository.getPlayerById(id) ?: return@launch
@@ -810,6 +840,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         willDieNextNight = false, // Reset penalty flag as it is now executed
                         isRevealedMafia = false, // Reset the night-revealed mafia status
                         isRevivedThisNight = false, // Reset the night-revived status
+                        wasBlockedLastNight = false,
                         isKilledToday = false,
                         isMuted = false, // Day ends, mute expires
                         isVoteRevoked = false, // Day ends, vote restriction expires
@@ -836,6 +867,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     player.copy(
                         isBlocked = false, // Night ends, block expires
+                        wasBlockedLastNight = player.isBlockedThisNight,
                         isBlockedThisNight = false, // Reset Matador's night block
                         isInsuredThisNight = false,
                         hasLiveGunThisRound = hasLiveGun
@@ -866,6 +898,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isHealedThisNight = false,
                     isShotThisNight = false,
                     isBlockedThisNight = false,
+                    wasBlockedLastNight = false,
                     isInsuredThisNight = false,
                     doctorSelfSavesCount = 0,
                     capabilitiesJson = "",
@@ -888,6 +921,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             _musketeerLiveGunExhausted.value = false
             _sagiCooldownNight.value = 0
             _sagiPastTargets.value = emptyList()
+            _isGravedigActiveThisNight.value = false
             _remainingInquiries.value = _totalInquiries.value
             _gameStage.value = "SETUP"
             _gamePhase.value = "Night"

@@ -55,6 +55,7 @@ import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
 import com.example.data.model.RoleCapability
+import com.example.data.model.getRoleAbilities
 import com.example.data.viewmodel.MafiaViewModel
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -104,6 +105,10 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         var roleToConfigureAbilities by remember { mutableStateOf<RoleEntity?>(null) }
         var shooterForLiveGun by remember { mutableStateOf<PlayerEntity?>(null) }
         var targetResultForLiveGun by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+        // --- Terrorist Custom Day-phase Reaction State ---
+        var showTerroristSelectionDialog by remember { mutableStateOf<PlayerEntity?>(null) }
+        var showTerrorAlertMessage by remember { mutableStateOf<String?>(null) }
 
         // Day Phase Timer Hoisted State
         var timerSelectedTime by rememberSaveable { mutableStateOf(60) }
@@ -400,10 +405,29 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                                 "LOGICAL" -> "به دلیل استدلال منطقی سناریو 🎯"
                                 else -> type
                             }
-                            triggerConfirmation(
-                                "مرگ قطعی بازیکن 💀",
-                                "آیا از حذف کامل بازیکن «$pName» از سناریو [$reasonStr] مطمئن هستید؟"
-                            ) { viewModel.eliminatePlayerWithReason(id, type) }
+                            if (p != null && type == "VOTE" && (getRoleAbilities(p.assignedRoleName ?: "").contains("TERROR") || p.assignedRoleName?.contains("ترور") == true)) {
+                                if (p.isBlockedThisNight || p.wasBlockedLastNight) {
+                                    triggerConfirmation(
+                                        "مرگ تروریست (مسدود شده) 💀",
+                                        "بازیکن «$pName» تروریست است اما شب گذشته مسدود/مست شده بود. آیا مایل به حذف او هستید؟"
+                                    ) {
+                                        showTerrorAlertMessage = "تروریست شب گذشته مسدود/مست شده بود و قابلیت ترور عمل نمیکند!"
+                                        viewModel.eliminatePlayerWithReason(id, type)
+                                    }
+                                } else {
+                                    triggerConfirmation(
+                                        "فعال‌سازی ترور 💣",
+                                        "بازیکن «$pName» تروریست است و در رای‌گیری حذف شد! آیا مایل به فعال‌سازی ترور و انتخاب قربانی هستید؟"
+                                    ) {
+                                        showTerroristSelectionDialog = p
+                                    }
+                                }
+                            } else {
+                                triggerConfirmation(
+                                    "مرگ قطعی بازیکن 💀",
+                                    "آیا از حذف کامل بازیکن «$pName» از سناریو [$reasonStr] مطمئن هستید؟"
+                                ) { viewModel.eliminatePlayerWithReason(id, type) }
+                            }
                         },
                         onReviveWithReason = { id, type ->
                             val p = players.find { it.id == id }
@@ -696,6 +720,35 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         message = "قابلیت این نقش امشب توسط ماتادور بسته شده است.",
                         onConfirm = { showMatadorBlockedAlert = false },
                         onDismiss = { showMatadorBlockedAlert = false }
+                    )
+                }
+
+                // --- Terrorist Action Dialog ---
+                val activeTerrorist = showTerroristSelectionDialog
+                if (activeTerrorist != null) {
+                    TerroristSelectionDialog(
+                        activeTerrorist = activeTerrorist,
+                        players = players,
+                        onConfirmTerror = { victim ->
+                            viewModel.executeTerroristAction(activeTerrorist.id, victim.id)
+                            showTerrorAlertMessage = "تروریست عملیات انتحاری انجام داد و «${victim.name}» را با خود برد! 💥"
+                            showTerroristSelectionDialog = null
+                        },
+                        onNormalElimination = {
+                            viewModel.eliminatePlayerWithReason(activeTerrorist.id, "VOTE")
+                            showTerroristSelectionDialog = null
+                        },
+                        onDismiss = { showTerroristSelectionDialog = null }
+                    )
+                }
+
+                val alertMsg = showTerrorAlertMessage
+                if (alertMsg != null) {
+                    StyledConfirmationDialog(
+                        title = "عملیات تروریست 💣",
+                        message = alertMsg,
+                        onConfirm = { showTerrorAlertMessage = null },
+                        onDismiss = { showTerrorAlertMessage = null }
                     )
                 }
             }
@@ -1831,6 +1884,7 @@ fun PlayStageContent(
 ) {
     val sagiCooldownNight by viewModel.sagiCooldownNight.collectAsStateWithLifecycle()
     val sagiPastTargets by viewModel.sagiPastTargets.collectAsStateWithLifecycle()
+    val isGravedigActive by viewModel.isGravedigActiveThisNight.collectAsStateWithLifecycle()
     val currentRound = remember(logs) {
         logs.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
     }
@@ -2704,6 +2758,115 @@ fun PlayStageContent(
                                         message = msg,
                                         onConfirm = { intoxicateAlertMessage = null },
                                         onDismiss = { intoxicateAlertMessage = null }
+                                    )
+                                }
+                            }
+
+                            "GRAVEDIG" -> {
+                                var gravedigActionMessage by remember { mutableStateOf<String?>(null) }
+                                val isBlocked = currentItem.player.isBlocked || currentItem.player.isBlockedThisNight
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "مدیریت نبش قبر (گورکن) 🪦",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = AccentGold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    if (isBlocked) {
+                                        Text(
+                                            text = "⚠️ قابلیت این نقش امشب توسط ماتادور بسته شده است و گورکن مسدود است.",
+                                            color = AccentCrimson,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "گورکن می‌تواند امشب تصمیم بگیرد که فردا صبح نبش قبر کند تا نقش‌های تمامی کشته‌شدگان بازی تا این لحظه به طور عمومی افشا شوند.",
+                                            color = Color.LightGray,
+                                            fontSize = 11.sp,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 18.sp,
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        )
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF0F0F18), RoundedCornerShape(8.dp))
+                                                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                                .padding(12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "فعالسازی نبش قبر برای فردا صبح 🪦:",
+                                                color = Color.White,
+                                                fontSize = 11.sp
+                                            )
+                                            Switch(
+                                                checked = isGravedigActive,
+                                                onCheckedChange = { isChecked ->
+                                                    triggerConfirmation(
+                                                        "تایید قابلیت گورکن 🪦",
+                                                        if (isChecked) {
+                                                            "آیا مطمئن هستید که می‌خواهید قابلیت نبش قبر را برای فردا فعال کنید؟"
+                                                        } else {
+                                                            "آیا مایل به لغو نبش قبر گورکن هستید؟"
+                                                        }
+                                                    ) {
+                                                        viewModel.setGravedigActive(isChecked)
+                                                        gravedigActionMessage = if (isChecked) {
+                                                            "نبش قبر گورکن برای فردا صبح فعال گردید."
+                                                        } else {
+                                                            "نبش قبر گورکن لغو گردید."
+                                                        }
+                                                    }
+                                                },
+                                                colors = SwitchDefaults.colors(
+                                                    checkedThumbColor = AccentGold,
+                                                    checkedTrackColor = AccentGold.copy(alpha = 0.5f),
+                                                    uncheckedThumbColor = Color.Gray,
+                                                    uncheckedTrackColor = Color(0xFF1C1C2E)
+                                                )
+                                            )
+                                        }
+
+                                        // Status message
+                                        Text(
+                                            text = if (isGravedigActive) {
+                                                "✅ وضعیت گورکن: فعال (نبش قبر فردا صبح اعمال خواهد شد)"
+                                            } else {
+                                                "❌ وضعیت گورکن: غیرفعال"
+                                            },
+                                            color = if (isGravedigActive) AccentCitizen else Color.Gray,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                gravedigActionMessage?.let { msg ->
+                                    StyledConfirmationDialog(
+                                        title = "عملکرد گورکن 🪦",
+                                        message = msg,
+                                        onConfirm = { gravedigActionMessage = null },
+                                        onDismiss = { gravedigActionMessage = null }
                                     )
                                 }
                             }
@@ -4725,7 +4888,12 @@ fun PlayStageContent(
         val listRevivedNames = if (revivedPlayers.isEmpty()) "هیچکس" else revivedPlayers.joinToString("، ") { it.name }
 
         Dialog(
-            onDismissRequest = { showNewNightSummaryDialog = false },
+            onDismissRequest = {
+                showNewNightSummaryDialog = false
+                if (isGravedigActive) {
+                    viewModel.setGravedigActive(false)
+                }
+            },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Card(
@@ -4794,10 +4962,60 @@ fun PlayStageContent(
                         }
                     }
 
+                    if (isGravedigActive) {
+                        val deadRoles = remember(players) {
+                            players.filter { it.isSelected && !it.isAlive }.mapNotNull { it.assignedRoleName }.distinct()
+                        }
+                        val deadRolesText = if (deadRoles.isEmpty()) "هیچ نقشی هنوز خارج نشده است" else deadRoles.joinToString("، ")
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF331D2D)),
+                            border = BorderStroke(1.dp, Color(0xFFE040FB)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text("🪦", fontSize = 16.sp)
+                                    Text(
+                                        text = "گورکن نبش قبر کرد!",
+                                        color = Color(0xFFE040FB),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Text(
+                                    text = "نقش‌های خارج‌شده از بازی تا این لحظه:",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = deadRolesText,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+
                     Button(
                         onClick = {
                             showNewNightSummaryDialog = false
                             showInquiryPromptDialog = true
+                            if (isGravedigActive) {
+                                viewModel.setGravedigActive(false)
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentGold, contentColor = BackgroundDark),
                         shape = RoundedCornerShape(10.dp),
@@ -9568,6 +9786,146 @@ fun StatRow(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("💀 کشته:", fontSize = 11.sp, color = Color.Gray)
                     Text("$deadCount نفر", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentCrimson)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TerroristSelectionDialog(
+    activeTerrorist: PlayerEntity,
+    players: List<PlayerEntity>,
+    onConfirmTerror: (PlayerEntity) -> Unit,
+    onNormalElimination: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedVictim by remember { mutableStateOf<PlayerEntity?>(null) }
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = BorderStroke(1.dp, BorderColor),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(AccentCrimson.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Terrorist Ability",
+                        tint = AccentCrimson,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                
+                Text(
+                    text = "ترور در روز (تروریست) 💣",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                
+                Text(
+                    text = "تروریست «${activeTerrorist.name}» در رای‌گیری حذف شد! چه کسی را ترور می‌کند؟",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                val otherAlivePlayers = players.filter { it.isAlive && it.id != activeTerrorist.id }
+                if (otherAlivePlayers.isEmpty()) {
+                    Text(
+                        text = "هیچ بازیکن زنده دیگری جهت ترور یافت نشد.",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(otherAlivePlayers) { player ->
+                            val isSelected = selectedVictim?.id == player.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isSelected) AccentCrimson.copy(alpha = 0.15f) else Color.Transparent,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) AccentCrimson else BorderColor,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { selectedVictim = player }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = player.name,
+                                    color = if (isSelected) AccentCrimson else Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                if (player.assignedRoleName != null) {
+                                    Text(
+                                        text = "(${player.assignedRoleName})",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            selectedVictim?.let { victim ->
+                                onConfirmTerror(victim)
+                            }
+                        },
+                        enabled = selectedVictim != null,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentCrimson,
+                            disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("تایید ترور 💥", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    
+                    Button(
+                        onClick = onNormalElimination,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        border = BorderStroke(1.dp, BorderColor),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("خروج عادی 🗳️", color = Color.White)
+                    }
                 }
             }
         }

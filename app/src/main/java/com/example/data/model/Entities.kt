@@ -28,6 +28,7 @@ data class PlayerEntity(
     val isHealedThisNight: Boolean = false,
     val isShotThisNight: Boolean = false,
     val isBlockedThisNight: Boolean = false,
+    val wasBlockedLastNight: Boolean = false,
     val isInsuredThisNight: Boolean = false,
     val doctorSelfSavesCount: Int = 0,
     val isRevealedMafia: Boolean = false,
