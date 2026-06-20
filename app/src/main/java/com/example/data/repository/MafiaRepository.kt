@@ -178,6 +178,13 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     abilitiesJson = """["TERROR"]"""
                 ),
                 RoleEntity(
+                    name = "ناتو 🎯",
+                    description = "جزء جناح مافیا است که به دنبال حدس زدن نقش شهروندان است. در صورت ۳ حدس اشتباه او از بازی حذف می‌شود.",
+                    team = "Mafia",
+                    capabilitiesJson = """[{"name":"حدس نقش (ناتو) 🎯","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["NATO_GUESS"]"""
+                ),
+                RoleEntity(
                     name = "هزارچهره 🎭",
                     description = "شخص مستقل بازی که نقش هر کس که حذف می‌شود را تا شب بعد تصاحب می‌کند",
                     team = "Independent",

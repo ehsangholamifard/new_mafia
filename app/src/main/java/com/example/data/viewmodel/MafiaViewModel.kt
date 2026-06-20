@@ -111,6 +111,13 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _isGravedigActiveThisNight = MutableStateFlow(false)
     val isGravedigActiveThisNight: StateFlow<Boolean> = _isGravedigActiveThisNight.asStateFlow()
 
+    private val _natoWrongGuessesCount = MutableStateFlow(0)
+    val natoWrongGuessesCount: StateFlow<Int> = _natoWrongGuessesCount.asStateFlow()
+
+    fun setNatoWrongGuessesCount(count: Int) {
+        _natoWrongGuessesCount.value = count
+    }
+
     fun setGravedigActive(active: Boolean) {
         _isGravedigActiveThisNight.value = active
     }
@@ -922,6 +929,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             _sagiCooldownNight.value = 0
             _sagiPastTargets.value = emptyList()
             _isGravedigActiveThisNight.value = false
+            _natoWrongGuessesCount.value = 0
             _remainingInquiries.value = _totalInquiries.value
             _gameStage.value = "SETUP"
             _gamePhase.value = "Night"
@@ -1917,6 +1925,69 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             // Refresh selected player settings dialog state
             if (_selectedPlayerForSettings.value?.id == constantineId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(constantineId)
+            }
+        }
+    }
+
+    fun executeNatoGuess(
+        natoPlayerId: Int,
+        targetPlayerId: Int,
+        selectedRole: String,
+        onResult: (Boolean, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val natoPlayer = repository.getPlayerById(natoPlayerId) ?: return@launch
+            val targetPlayer = repository.getPlayerById(targetPlayerId) ?: return@launch
+
+            if (natoPlayer.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: قابلیت ناتو «${natoPlayer.name}» امشب مسدود شده است.")
+                onResult(false, _natoWrongGuessesCount.value)
+                return@launch
+            }
+
+            // Decrement remaining count of capabilitiesJson of natoPlayer
+            if (natoPlayer.capabilitiesJson.isNotBlank()) {
+                try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(natoPlayer.capabilitiesJson)
+                    val updatedCaps = caps.map { cap ->
+                        if (cap.name.contains("حدس") && cap.remainingCount > 0) {
+                            cap.copy(remainingCount = cap.remainingCount - 1)
+                        } else cap
+                    }
+                    val updatedJson = Json.encodeToString(updatedCaps)
+                    val updatedNato = natoPlayer.copy(capabilitiesJson = updatedJson)
+                    repository.updatePlayer(updatedNato)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            val targetRoleName = targetPlayer.assignedRoleName ?: ""
+            val isCorrect = targetRoleName.lowercase().contains(selectedRole.lowercase()) ||
+                            selectedRole.lowercase().contains(targetRoleName.lowercase()) ||
+                            (selectedRole == "پزشک" && targetRoleName.contains("دکتر")) ||
+                            (selectedRole == "دکتر" && targetRoleName.contains("پزشک"))
+
+            if (isCorrect) {
+                val killedTarget = targetPlayer.copy(isAlive = false, isShotThisNight = true)
+                repository.updatePlayer(killedTarget)
+                repository.addLog("🎯 حدس ناتو درست بود! بازیکن «${targetPlayer.name}» واقعاً نقش «${targetRoleName}» را دارد و حذف می‌شود.")
+                onResult(true, _natoWrongGuessesCount.value)
+            } else {
+                _natoWrongGuessesCount.value++
+                val newCount = _natoWrongGuessesCount.value
+                repository.addLog("❌ حدس ناتو اشتباه بود! او حدس زد بازیکن «${targetPlayer.name}» نقش «${selectedRole}» را دارد. تعداد خطاها: $newCount/3")
+
+                if (newCount >= 3) {
+                    val updatedNato = natoPlayer.copy(isAlive = false, isShotThisNight = true)
+                    repository.updatePlayer(updatedNato)
+                    repository.addLog("💀 ناتو «${natoPlayer.name}» به دلیل ۳ حدس اشتباه از بازی حذف شد.")
+                }
+                onResult(false, newCount)
+            }
+
+            if (_selectedPlayerForSettings.value?.id == natoPlayerId) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(natoPlayerId)
             }
         }
     }

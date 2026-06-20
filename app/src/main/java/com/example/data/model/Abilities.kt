@@ -124,6 +124,13 @@ val ABILITY_REGISTRY = mapOf(
         description = "هنگام خروج با رایگیری در روز، میتواند یک بازیکن زنده دیگر را همراه خود حذف کند. اگر شب قبل توسط ساقی مسدود شده باشد، این قابلیت کار نمیکند.",
         nightPriority = 0,
         actionType = "DAY_EXECUTION_REACTION"
+    ),
+    "NATO_GUESS" to Ability(
+        id = "NATO_GUESS",
+        name = "حدس نقش (ناتو)",
+        description = "به دنبال نقش شهروندان است. گرداننده نام یک بازیکن و نقش حدس زده شده را وارد میکند. در صورت ۳ حدس اشتباه، ناتو از بازی حذف میشود.",
+        nightPriority = 48,
+        actionType = "TARGET_PLAYER_AND_ROLE"
     )
 )
 
@@ -150,6 +157,7 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("کین") || normalized.contains("kane") -> listOf("REVEAL_MAFIA")
         normalized.contains("کنستانتین") || normalized.contains("constantine") -> listOf("REVIVE")
         normalized.contains("وتو") || normalized.contains("veto") -> listOf("VETO")
+        normalized.contains("ناتو") || normalized.contains("nato") -> listOf("NATO_GUESS")
         else -> emptyList()
     }
 }

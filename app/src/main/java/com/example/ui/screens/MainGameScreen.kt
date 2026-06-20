@@ -4468,6 +4468,15 @@ fun PlayStageContent(
                                     )
                                 }
                             }
+
+                            "NATO_GUESS" -> {
+                                NatoGuessActionContent(
+                                    currentItem = currentItem,
+                                    players = players,
+                                    caps = caps,
+                                    viewModel = viewModel
+                                )
+                            }
                         }
 
                         // Navigator buttons (Next / Prev)
@@ -9931,3 +9940,225 @@ fun TerroristSelectionDialog(
         }
     }
 }
+
+@Composable
+fun NatoGuessActionContent(
+    currentItem: com.example.data.model.NightActionQueueItem,
+    players: List<PlayerEntity>,
+    caps: List<RoleCapability>,
+    viewModel: com.example.data.viewmodel.MafiaViewModel
+) {
+    val alivePlayers = remember(players) {
+        players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
+    }
+    var selectedTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
+    var isTargetMenuExpanded by remember { mutableStateOf(false) }
+    
+    val citizenRoles = remember {
+        listOf(
+            "پزشک", "دکتر", "کشیش", "روانپزشک", "هکر", "گورکن", "فرمانده", "کارآگاه", 
+            "حرفه‌ای", "تفنگدار", "زره‌پوش", "جان‌سخت", "اوشن - ژنرال", "کنستانتین", 
+            "همشهری کین", "شهروند ساده"
+        )
+    }
+    var selectedRole by remember(currentItem) { mutableStateOf<String?>(null) }
+    var isRoleMenuExpanded by remember { mutableStateOf(false) }
+    var natoGuessAlertMessage by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
+            .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "حدس نقش توسط ناتو (جناح مافیا) 🎯",
+            fontWeight = FontWeight.Bold,
+            color = AccentCrimson,
+            fontSize = 12.sp
+        )
+
+        val natoCap = caps.find { it.name.contains("حدس") || it.name.contains("ناتو") }
+        if (natoCap != null) {
+            Text(
+                text = "🎯 تعداد حدس‌های ناتو باقی‌مانده: ${natoCap.remainingCount} از ${natoCap.totalCount}",
+                color = AccentGold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Standard target player dropdown
+        Text(
+            text = "۱. انتخاب شهروند زنده جهت حدس:",
+            color = Color.LightGray,
+            fontSize = 11.sp
+        )
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            val currentSelectedPlayer = alivePlayers.find { it.id == selectedTargetId }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F0F18), RoundedCornerShape(8.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .clickable { isTargetMenuExpanded = true }
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = currentSelectedPlayer?.name ?: "انتخاب بازیکن شهروند...",
+                    color = if (currentSelectedPlayer != null) Color.White else Color.Gray,
+                    fontSize = 11.sp
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = Color.Gray
+                )
+            }
+
+            DropdownMenu(
+                expanded = isTargetMenuExpanded,
+                onDismissRequest = { isTargetMenuExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .background(SurfaceDark)
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+            ) {
+                if (alivePlayers.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("هیچ بازیکن زنده معتبری وجود ندارد.", color = Color.Gray, fontSize = 11.sp) },
+                        onClick = { isTargetMenuExpanded = false }
+                    )
+                } else {
+                    alivePlayers.forEach { p ->
+                        DropdownMenuItem(
+                            text = { Text(p.name, color = Color.White, fontSize = 11.sp) },
+                            onClick = {
+                                selectedTargetId = p.id
+                                isTargetMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Role select Dropdown Menu next to/below target
+        Text(
+            text = "۲. حدس نقش این بازیکن:",
+            color = Color.LightGray,
+            fontSize = 11.sp
+        )
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F0F18), RoundedCornerShape(8.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .clickable { isRoleMenuExpanded = true }
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = selectedRole ?: "انتخاب نقش حدس زده شده...",
+                    color = if (selectedRole != null) Color.White else Color.Gray,
+                    fontSize = 11.sp
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = Color.Gray
+                )
+            }
+
+            DropdownMenu(
+                expanded = isRoleMenuExpanded,
+                onDismissRequest = { isRoleMenuExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .background(SurfaceDark)
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+            ) {
+                citizenRoles.forEach { role ->
+                    DropdownMenuItem(
+                        text = { Text(role, color = Color.White, fontSize = 11.sp) },
+                        onClick = {
+                            selectedRole = role
+                            isRoleMenuExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        val isNatoBlocked = currentItem.player.isBlocked || currentItem.player.isBlockedThisNight
+        val isConfirmEnabled = selectedTargetId != null && selectedRole != null && !isNatoBlocked
+
+        Button(
+            onClick = {
+                val targetId = selectedTargetId
+                val roleName = selectedRole
+                if (targetId != null && roleName != null) {
+                    val target = alivePlayers.find { it.id == targetId }
+                    if (target != null) {
+                        viewModel.executeNatoGuess(
+                            currentItem.player.id,
+                            target.id,
+                            roleName
+                        ) { isCorrect, wrongCount ->
+                            if (isCorrect) {
+                                natoGuessAlertMessage = "حدس درست بود! بازیکن «${target.name}» واقعاً «${target.assignedRoleName ?: "نقش شهروندی"}» است."
+                            } else {
+                                if (wrongCount >= 3) {
+                                    natoGuessAlertMessage = "حدس اشتباه بود! تعداد حدس‌های اشتباه ناتو به ۳ رسید و ناتو («${currentItem.player.name}») از بازی حذف شد! 💀"
+                                } else {
+                                    natoGuessAlertMessage = "حدس اشتباه بود! تعداد حدس‌های اشتباه ناتو: $wrongCount/3"
+                                }
+                            }
+                            selectedTargetId = null
+                            selectedRole = null
+                        }
+                    }
+                }
+            },
+            enabled = isConfirmEnabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = AccentCrimson,
+                disabledContainerColor = Color(0xFF1E1E2D)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .testTag("nato_guess_confirm_button"),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = if (isNatoBlocked) "🚫 مسدود شده‌اید" else "تایید حدس نقش ناتو 💥",
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = if (isConfirmEnabled) Color.White else Color.Gray
+            )
+        }
+    }
+
+    natoGuessAlertMessage?.let { msg ->
+        StyledConfirmationDialog(
+            title = "نتیجه حدس نقش ناتو 🎯",
+            message = msg,
+            onConfirm = { natoGuessAlertMessage = null },
+            onDismiss = { natoGuessAlertMessage = null }
+        )
+    }
+}
+
