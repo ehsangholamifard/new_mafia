@@ -105,6 +105,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _sagiCooldownNight = MutableStateFlow(0)
     val sagiCooldownNight: StateFlow<Int> = _sagiCooldownNight.asStateFlow()
 
+    private val _churchillLastShotNight = MutableStateFlow(0)
+    val churchillLastShotNight: StateFlow<Int> = _churchillLastShotNight.asStateFlow()
+
     private val _sagiPastTargets = MutableStateFlow<List<Int>>(emptyList())
     val sagiPastTargets: StateFlow<List<Int>> = _sagiPastTargets.asStateFlow()
 
@@ -855,7 +858,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         hasLiveGunThisRound = false, // Day to Night cleanup (Part 5)
                         usedLiveGun = false, // Day to Night cleanup (Part 5)
                         isSilencedThisRound = false,
-                        isSabotaged = false
+                        isSabotaged = false,
+                        isKilledByChurchill = false
                     )
                 }
                 repository.insertPlayers(updated)
@@ -921,13 +925,17 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
                     usedLiveGun = false,
-                    isSilencedThisRound = false
+                    isSilencedThisRound = false,
+                    isKilledByChurchill = false,
+                    isBulletproof = false,
+                    isProtected = false
                 )
             }
             repository.insertPlayers(restored)
             repository.clearLogs()
             _musketeerLiveGunExhausted.value = false
             _sagiCooldownNight.value = 0
+            _churchillLastShotNight.value = 0
             _sagiPastTargets.value = emptyList()
             _isGravedigActiveThisNight.value = false
             _natoWrongGuessesCount.value = 0
@@ -1005,7 +1013,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun insurePlayer(insurerId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val insurer = repository.getPlayerById(insurerId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(insurerId, targetId)
 
             if (insurer.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت بیمه‌کننده «${insurer.name}» امشب توسط ماتادور بسته شده است.")
@@ -1058,7 +1066,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun silencePlayer(psychiatristId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val psych = repository.getPlayerById(psychiatristId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(psychiatristId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت روانپزشک «${psych.name}» روی او خنثی شد.")
@@ -1116,7 +1124,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun unsilencePlayer(priestId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val priest = repository.getPlayerById(priestId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(priestId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه‌شده است و اثر قابلیت کشیش «${priest.name}» روی او خنثی شد.")
@@ -1253,7 +1261,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun intoxicatePlayer(sagiId: Int, targetId: Int, currentRound: Int, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val sagi = repository.getPlayerById(sagiId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(sagiId, targetId)
             
             if (sagi.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: ساقی «${sagi.name}» امشب توسط ماتادور مسدود شده بود و مست کردن ناموفق ماند.")
@@ -1342,7 +1350,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun professionalShoot(professionalId: Int, targetId: Int, overrideKill: Boolean? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(professionalId, targetId)
             
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.assignedRoleName ?: "حرفه‌ای"}» روی او خنثی شد.")
@@ -1425,7 +1433,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 } else if (target.assignedRoleTeam == "Independent") {
                     val isChurchill = target.assignedRoleName?.contains("چرچیل") == true
                     if (isChurchill) {
-                        // Survive
+                        // Survive but mark as shot
+                        val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
+                        repository.updatePlayer(updatedTarget)
                         repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به «${target.name}» (چرچیل) شلیک کرد اما تیر بر روی او بی‌اثر بود.")
                     } else {
                         // Eliminated / Check if saved by doctor
@@ -1530,7 +1540,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun doctorHeal(doctorId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val doc = repository.getPlayerById(doctorId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(doctorId, targetId)
             
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت پزشک «${doc.assignedRoleName ?: "پزشک"}» روی او خنثی شد.")
@@ -1591,7 +1601,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 freshDoc.doctorSelfSavesCount
             }
 
-            if (freshTarget.isSlaughtered) {
+            if (freshTarget.isSlaughtered || freshTarget.isKilledByChurchill) {
                 // Slaughtered -> Doctor's cure is ignored, they die, but action is consumed
                 val finalTarget = freshTarget.copy(
                     isSaved = true,
@@ -1604,7 +1614,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     val refreshedDocWithSaves = freshDoc.copy(doctorSelfSavesCount = finalSelfSavesCount)
                     repository.updatePlayer(refreshedDocWithSaves)
                 }
-                repository.addLog("🩺 تلاش پزشک برای نجات «${freshTarget.name}» ثبت شد اما با شکست مواجه گردید (بازیکن سلاخی شده است).")
+                val causeMsg = if (freshTarget.isKilledByChurchill) "بازیکن به شلیک چرچیل کشته شده است" else "بازیکن سلاخی شده است"
+                repository.addLog("🩺 تلاش پزشک برای نجات «${freshTarget.name}» ثبت شد اما با شکست مواجه گردید (${causeMsg}).")
             } else {
                 // Healed!
                 val finalTarget = freshTarget.copy(
@@ -1631,7 +1642,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun godfatherShoot(godfatherId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(godfatherId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» روی او خنثی شد.")
@@ -1676,14 +1687,20 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
             val freshTarget = repository.getPlayerById(targetId) ?: target
 
-            // Check if Tough Guy (جان‌سخت)
+            // Check if Tough Guy (جان‌سخت) or Churchill (چرچیل)
             val isToughGuy = freshTarget.assignedRoleName?.contains("جان") == true && freshTarget.assignedRoleName?.contains("سخت") == true
+            val isChurchill = freshTarget.assignedRoleName?.contains("چرچیل") == true
             
             if (isToughGuy) {
                 // Tough Guy survives the shot
                 val updatedTarget = freshTarget.copy(isShotThisNight = true, isAlive = true)
                 repository.updatePlayer(updatedTarget)
                 repository.addLog("🛡️ رئیس مافیا (پدرخوانده) به بازیکن «${freshTarget.name}» (جان‌سخت) شلیک کرد اما تیر بی‌اثر بود و جان سالم به در برد.")
+            } else if (isChurchill) {
+                // Churchill survives the shot
+                val updatedTarget = freshTarget.copy(isShotThisNight = true, isAlive = true)
+                repository.updatePlayer(updatedTarget)
+                repository.addLog("🛡️ رئیس مافیا (پدرخوانده) به بازیکن «${freshTarget.name}» (چرچیل) شلیک کرد اما چرچیل به شلیک‌های شب مصون است.")
             } else {
                 // Check if healed by Doctor
                 if (freshTarget.isHealedThisNight) {
@@ -1774,7 +1791,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun matadorBlock(matadorId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val matador = repository.getPlayerById(matadorId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(matadorId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت مسدود کردن «${matador.name}» روی او خنثی شد.")
@@ -1827,7 +1844,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun generalCheck(generalId: Int, targetId: Int, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val general = repository.getPlayerById(generalId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(generalId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت اوشن - ژنرال «${general.name}» روی او خنثی شد.")
@@ -2000,7 +2017,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val saboteur = repository.getPlayerById(saboteurId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(saboteurId, targetId)
 
             if (saboteur.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت خرابکار «${saboteur.name}» امشب توسط ماتادور بسته شده است.")
@@ -2076,7 +2093,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun citizenKaneReveal(kaneId: Int, targetId: Int, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             var kane = repository.getPlayerById(kaneId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(kaneId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت همشهری کین «${kane.name}» روی او خنثی شد.")
@@ -2131,7 +2148,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun godfatherRecruit(godfatherId: Int, targetId: Int, onResult: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             var gf = repository.getPlayerById(godfatherId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(godfatherId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت رئیس مافیا (پدرخوانده) «${gf.name}» روی او خنثی شد.")
@@ -2202,7 +2219,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun buyerRecruit(buyerId: Int, targetId: Int, onResult: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             var buyer = repository.getPlayerById(buyerId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(buyerId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت خریدار (مذاکره کننده) «${buyer.name}» روی او خنثی شد.")
@@ -2273,7 +2290,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun giveMusketeerGun(musketeerId: Int, targetId: Int, isLive: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             val musketeer = repository.getPlayerById(musketeerId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
+            val target = checkAndTransformMajhool(musketeerId, targetId)
 
             if (target.isInsuredThisNight) {
                 repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت تفنگدار «${musketeer.name}» روی او خنثی شد.")
@@ -2367,5 +2384,75 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun churchillShoot(churchillId: Int, targetId: Int, currentRound: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val churchill = repository.getPlayerById(churchillId) ?: return@launch
+            val target = checkAndTransformMajhool(churchillId, targetId)
+
+            if (target.isInsuredThisNight) {
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر شلیک چرچیل «${churchill.name}» روی او خنثی شد.")
+                _churchillLastShotNight.value = currentRound
+                return@launch
+            }
+
+            if (churchill.isBlockedThisNight) {
+                repository.addLog("⚠️ خطا: چرچیل «${churchill.name}» امشب توسط ماتادور مسدود شده بود و شلیک ناموفق ماند.")
+                return@launch
+            }
+
+            val isBulletproof = target.isBulletproof || target.assignedRoleName?.contains("رویین") == true || target.assignedRoleName?.lowercase()?.contains("bulletproof") == true
+            val isProtected = target.isProtected || target.assignedRoleName?.contains("محافظ") == true || target.assignedRoleName?.lowercase()?.contains("guardian") == true
+
+            if (isBulletproof || isProtected) {
+                val updatedTarget = target.copy(isShotThisNight = true)
+                repository.updatePlayer(updatedTarget)
+                repository.addLog("🛡️ شلیک چرچیل به بازیکن «${target.name}» بی‌اثر بود (رویین‌تن/محافظ).")
+            } else {
+                val killedTarget = target.copy(
+                    isAlive = false,
+                    isKilledByChurchill = true,
+                    isShotThisNight = true
+                )
+                repository.updatePlayer(killedTarget)
+                repository.addLog("💀 بازیکن «${target.name}» در شب توسط شلیک چرچیل («${churchill.name}») کشته شد (غیرقابل نجات توسط پزشک).")
+            }
+
+            _churchillLastShotNight.value = currentRound
+            
+            val refreshedChurchill = repository.getPlayerById(churchillId)
+            if (_selectedPlayerForSettings.value?.id == churchillId) {
+                _selectedPlayerForSettings.value = refreshedChurchill
+            }
+        }
+    }
+
+    suspend fun checkAndTransformMajhool(actorId: Int, targetId: Int): PlayerEntity {
+        val target = repository.getPlayerById(targetId) ?: return PlayerEntity(name = "")
+        val isTargetMajhool = target.assignedRoleName?.contains("مجهول") == true
+        if (isTargetMajhool) {
+            val actor = repository.getPlayerById(actorId) ?: return target
+            val actorTeam = actor.assignedRoleTeam ?: ""
+            val (newRoleName, newTeam, alertTeamLabel) = if (actorTeam == "Mafia") {
+                Triple("مافیای ساده 👤", "Mafia", "مافیای ساده")
+            } else {
+                Triple("شهروند ساده 🕊️", "Citizen", "شهروند ساده")
+            }
+            val transformedTarget = target.copy(
+                assignedRoleName = newRoleName,
+                assignedRoleTeam = newTeam,
+                isInsuredThisNight = true
+            )
+            repository.updatePlayer(transformedTarget)
+            val logMsg = "👤❓ مجهول («${target.name}») توسط «${actor.name}» (جناح ${if (actorTeam == "Mafia") "مافیا" else "شهروند/مستقل"}) انتخاب شد و به [$alertTeamLabel] تبدیل شد! (بیمه فعال شد)"
+            repository.addLog(logMsg)
+            
+            if (_selectedPlayerForSettings.value?.id == targetId) {
+                _selectedPlayerForSettings.value = transformedTarget
+            }
+            return transformedTarget
+        }
+        return target
     }
 }

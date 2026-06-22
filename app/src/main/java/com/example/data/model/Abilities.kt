@@ -138,6 +138,13 @@ val ABILITY_REGISTRY = mapOf(
         description = "یک نفر را انتخاب میکند. اگر آن شخص تفنگ جنگی داشته باشد و در روز شلیک کند، تیر به خودش برمیگردد. روی نقش ساقی بیاثر است.",
         nightPriority = 35,
         actionType = "TARGET_ONE_ALIVE"
+    ),
+    "CHURCHILL_SHOOT" to Ability(
+        id = "CHURCHILL_SHOOT",
+        name = "شلیک شبانه (چرچیل)",
+        description = "هر دو شب یک بار بیدار شده و یک نفر را شات میکند. این کشته توسط پزشک نجاتیافتنی نیست. روی رویینتن و محافظ اثری ندارد.",
+        nightPriority = 44,
+        actionType = "TARGET_ONE_ALIVE"
     )
 )
 
@@ -166,6 +173,7 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("وتو") || normalized.contains("veto") -> listOf("VETO")
         normalized.contains("ناتو") || normalized.contains("nato") -> listOf("NATO_GUESS")
         normalized.contains("خرابکار") || normalized.contains("saboteur") || normalized.contains("sabotage") -> listOf("SABOTAGE")
+        normalized.contains("چرچیل") || normalized.contains("churchill") -> listOf("CHURCHILL_SHOOT")
         else -> emptyList()
     }
 }
