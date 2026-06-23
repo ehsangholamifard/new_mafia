@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,8 +66,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 // Premium Palette (Deep Charcoal/Navy & Elegant Accents)
-val BackgroundDark = Color(0xFF0B0A14) // Sleek deep navy/charcoal background
-val SurfaceDark = Color(0xFF141324)    // Elevated elegant card/dialog container
+val BackgroundDark = Color(0xFF1E1E2E)
+val SurfaceDark = Color(0xFF141423)
+val PrimaryPurple = Color(0xFF8B5CF6)
+val TextWhite = Color(0xFFFFFFFF)
+val TextGray = Color(0xFF8B8B9B)
 val BorderColor = Color(0xFF25233D)    // Subdued modern borders of containers
 val AccentCrimson = Color(0xFFFF4D5A)  // Sleek vibrant crimson accent for Mafia
 val AccentCitizen = Color(0xFF38BDF8)  // Subtle gorgeous azure blue for Citizens
@@ -1067,6 +1071,8 @@ fun SetupStageContent(
     onEditAbilities: (RoleEntity) -> Unit
 ) {
     var playerInputText by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("همه") }
+    var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
 
     val selectedCount = remember(players) { players.filter { it.isSelected }.size }
@@ -1352,44 +1358,298 @@ fun SetupStageContent(
             }
         }
 
-        // Roles counters lists divided by Teams (Order: Independent, Mafia, Citizen)
-        val citizenRoles = roles.filter { it.team == "Citizen" }
-        val mafiaRoles = roles.filter { it.team == "Mafia" }
-        val independentRoles = roles.filter { it.team == "Independent" }
+        // Steps 1 & 2 & 3: Category Filters, Search Bar, and Role List Cards
+        item {
+            val categories = listOf("همه", "مافیا", "شهروند", "مستقل", "سفارشی")
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) {
+                categories.forEach { cat ->
+                    item {
+                        val isSelected = selectedCategory == cat
+                        val chipBgColor = if (isSelected) PrimaryPurple else SurfaceDark
+                        val chipTxtColor = if (isSelected) TextWhite else TextGray
+                        val chipBorderColor = if (isSelected) PrimaryPurple else BorderColor
 
-        if (independentRoles.isNotEmpty()) {
-            item {
-                TeamRolesSection(
-                    title = "نقش‌های مستقل 🎭",
-                    teamColor = AccentGold,
-                    rolesList = independentRoles,
-                    onInc = onIncrementRole,
-                    onDec = onDecrementRole,
-                    onEditAbilities = onEditAbilities
-                )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(chipBgColor)
+                                .border(1.dp, chipBorderColor, RoundedCornerShape(20.dp))
+                                .clickable { selectedCategory = cat }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = cat,
+                                color = chipTxtColor,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
             }
         }
 
         item {
-            TeamRolesSection(
-                title = "تیم مافیا 🕶️",
-                teamColor = AccentCrimson,
-                rolesList = mafiaRoles,
-                onInc = onIncrementRole,
-                onDec = onDecrementRole,
-                onEditAbilities = onEditAbilities
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("جستجوی نقش...", color = TextGray, fontSize = 13.sp) },
+                leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextGray) },
+                singleLine = true,
+                maxLines = 1,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextWhite,
+                    unfocusedTextColor = TextWhite,
+                    focusedContainerColor = SurfaceDark,
+                    unfocusedContainerColor = SurfaceDark,
+                    focusedBorderColor = PrimaryPurple,
+                    unfocusedBorderColor = BorderColor
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             )
         }
 
-        item {
-            TeamRolesSection(
-                title = "تیم شهروندان 🕊️",
-                teamColor = AccentCitizen,
-                rolesList = citizenRoles,
-                onInc = onIncrementRole,
-                onDec = onDecrementRole,
-                onEditAbilities = onEditAbilities
-            )
+        // Filter calculation
+        val filteredRoles = roles.filter { role ->
+            // Filter by category
+            val matchesCategory = when (selectedCategory) {
+                "همه" -> true
+                "مافیا" -> role.team == "Mafia"
+                "شهروند" -> role.team == "Citizen"
+                "مستقل" -> role.team == "Independent"
+                "سفارشی" -> {
+                    val defaultRoleNames = setOf(
+                        "کارآگاه 🔍", "دکتر 🩺", "حرفه‌ای 🔫", "تفنگدار 🪖", "زره‌پوش 🛡️", "جان‌سخت 💪",
+                        "اوشن - ژنرال 🌊", "کنستانتین ⚡", "همشهری کین 📰", "کشیش ⛪", "شهروند ساده 🕊️",
+                        "رئیس مافیا (پدرخوانده) 👑", "دکتر لکتور 💊", "خریدار (مذاکره کننده) 🤝", "تروریست 💣",
+                        "مافیای ساده 👤", "ماتادور 🧣", "روانپزشک 🧠", "هکر 📡", "ساقی 🍷", "گورکن 🪦",
+                        "ناتو 🎯", "خرابکار 🔫"
+                    )
+                    !defaultRoleNames.contains(role.name) && !defaultRoleNames.contains(role.name.trim())
+                }
+                else -> true
+            }
+            // Filter by search query
+            val matchesSearch = if (searchQuery.isBlank()) {
+                true
+            } else {
+                role.name.contains(searchQuery, ignoreCase = true) || 
+                role.description.contains(searchQuery, ignoreCase = true)
+            }
+            matchesCategory && matchesSearch
+        }
+
+        if (filteredRoles.isEmpty()) {
+            item {
+                EmptyListTip(text = "هیچ نقشی با مشخصات مورد نظر پیدا نشد.")
+            }
+        } else {
+            filteredRoles.forEach { role ->
+                item {
+                    val context = LocalContext.current
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        border = BorderStroke(1.dp, BorderColor),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Left Side Info (Avatar + Name + Team Badge)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    // Role Avatar Circle
+                                    val avatarBg = when(role.team) {
+                                        "Mafia" -> AccentCrimson.copy(alpha = 0.2f)
+                                        "Citizen" -> AccentCitizen.copy(alpha = 0.2f)
+                                        else -> AccentGold.copy(alpha = 0.2f)
+                                    }
+                                    val avatarBorder = when(role.team) {
+                                        "Mafia" -> AccentCrimson
+                                        "Citizen" -> AccentCitizen
+                                        else -> AccentGold
+                                    }
+                                    val emoji = when {
+                                        role.name.contains("کارآگاه") -> "🔍"
+                                        role.name.contains("دکتر") || role.name.contains("پزشک") -> "🩺"
+                                        role.name.contains("حرفه‌ای") -> "🔫"
+                                        role.name.contains("تفنگ") -> "🪖"
+                                        role.name.contains("زره") -> "🛡️"
+                                        role.name.contains("سختی") || role.name.contains("سخت") -> "💪"
+                                        role.name.contains("رئیس") || role.name.contains("پدر") -> "👑"
+                                        role.name.contains("ساقی") -> "🍷"
+                                        role.name.contains("ناتو") -> "🎯"
+                                        role.name.contains("ترور") -> "💣"
+                                        else -> "🎭"
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .background(avatarBg, CircleShape)
+                                            .border(1.dp, avatarBorder, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(text = emoji, fontSize = 20.sp)
+                                    }
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = role.name,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+
+                                            // Ability Button
+                                            TextButton(
+                                                onClick = { onEditAbilities(role) },
+                                                modifier = Modifier.height(24.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                colors = ButtonDefaults.textButtonColors(contentColor = AccentGold)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Settings,
+                                                        contentDescription = "قابلیت‌ها",
+                                                        tint = AccentGold,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Text("قابلیت‌ها", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                        // Team Badge Below Name
+                                        val (badgeText, badgeColor) = when(role.team) {
+                                            "Mafia" -> "مافیا" to AccentCrimson
+                                            "Citizen" -> "شهروند" to AccentCitizen
+                                            else -> "مستقل" to AccentGold
+                                        }
+                                        Text(
+                                            text = badgeText,
+                                            color = badgeColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                // Right Side: Add / Stepper
+                                val isUnique = !role.name.contains("ساده")
+                                val isUniqueAndMaxed = isUnique && role.count >= 1
+
+                                if (role.count == 0) {
+                                    Button(
+                                        onClick = {
+                                            if (isUniqueAndMaxed) {
+                                                Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                onIncrementRole(role.id)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFD4AF37), // Yellow/Gold
+                                            contentColor = Color(0xFF141324)
+                                        ),
+                                        shape = RoundedCornerShape(20.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Text(
+                                            text = "افزودن",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = { onDecrementRole(role.id) },
+                                            modifier = Modifier
+                                                .size(30.dp)
+                                                .background(Color(0xFF2E2E3E), CircleShape)
+                                                .border(1.dp, BorderColor, CircleShape)
+                                        ) {
+                                            Text("−", color = AccentCrimson, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        }
+
+                                        Text(
+                                            text = role.count.toString(),
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.width(20.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                if (isUniqueAndMaxed) {
+                                                    Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    onIncrementRole(role.id)
+                                                }
+                                            },
+                                            enabled = !isUniqueAndMaxed,
+                                            modifier = Modifier
+                                                .size(30.dp)
+                                                .background(
+                                                    if (isUniqueAndMaxed) Color(0xFF2E2E3E).copy(alpha = 0.4f) else Color(0xFFD4AF37),
+                                                    CircleShape
+                                                )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "افزایش",
+                                                tint = if (isUniqueAndMaxed) Color.White.copy(alpha = 0.3f) else Color(0xFF141324),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (role.description.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = role.description,
+                                    color = TextGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Conflict Warning Banner is now implemented as a top sticky header
@@ -1614,34 +1874,128 @@ fun SetupStageContent(
             }
         }
 
-        // Confirm Button spacer
+        // Spacer at the bottom of LazyColumn to avoid content occlusion by the sticky bottom bar
         item {
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(160.dp))
+        }
+    }
 
-            Button(
-                onClick = onStartGame,
-                enabled = isEnabled,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentCitizen,
-                    contentColor = BackgroundDark,
-                    disabledContainerColor = Color(0xFF1E3A20)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp)
+    // Step 4: Bottom Action Area (Floating overlay)
+    Box(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, BackgroundDark.copy(alpha = 0.95f), BackgroundDark)
+                )
+            )
+            .padding(top = 20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = SurfaceDark,
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                )
+                .border(
+                    width = 1.dp,
+                    color = BorderColor,
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                )
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val selectedRolesList = roles.filter { it.count > 0 }
+            val totalSelectedRolesCount = selectedRolesList.sumOf { it.count }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "توزیع کارت‌ها و شروع بازی 🃏",
+                        text = "نقش‌های انتخاب شده",
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
+                    Text(
+                        text = "تعداد: $totalSelectedRolesCount نقش از $selectedCount بازیکن منتخب",
+                        color = TextGray,
+                        fontSize = 11.sp
+                    )
                 }
+
+                // Overlapping avatars
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy((-8).dp),
+                    reverseLayout = true,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    selectedRolesList.forEach { role ->
+                        repeat(role.count) {
+                            item {
+                                val emoji = when {
+                                    role.name.contains("کارآگاه") -> "🔍"
+                                    role.name.contains("دکتر") || role.name.contains("پزشک") -> "🩺"
+                                    role.name.contains("حرفه‌ای") -> "🔫"
+                                    role.name.contains("تفنگ") -> "🪖"
+                                    role.name.contains("زره") -> "🛡️"
+                                    role.name.contains("سختی") || role.name.contains("سخت") -> "💪"
+                                    role.name.contains("رئیس") || role.name.contains("پدر") -> "👑"
+                                    role.name.contains("ساقی") -> "🍷"
+                                    role.name.contains("ناتو") -> "🎯"
+                                    role.name.contains("ترور") -> "💣"
+                                    else -> "🎭"
+                                }
+                                val avatarBg = when(role.team) {
+                                    "Mafia" -> AccentCrimson.copy(alpha = 0.2f)
+                                    "Citizen" -> AccentCitizen.copy(alpha = 0.2f)
+                                    else -> AccentGold.copy(alpha = 0.2f)
+                                }
+                                val avatarBorder = when(role.team) {
+                                    "Mafia" -> AccentCrimson
+                                    "Citizen" -> AccentCitizen
+                                    else -> AccentGold
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(avatarBg, CircleShape)
+                                        .border(1.dp, avatarBorder, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = emoji, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val isReady = selectedCount > 0 && selectedCount == totalSelectedRolesCount
+            Button(
+                onClick = onStartGame,
+                enabled = isReady,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryPurple,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFF2E243E)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Text(
+                    text = if (isReady) "ادامه و شروع بازی 🚀" else "بازیکنان ($selectedCount) و نقش‌ها ($totalSelectedRolesCount) برابر نیستند",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = if (isReady) Color.White else TextGray
+                )
             }
         }
     }
@@ -10662,154 +11016,283 @@ fun RevealActionContent(
 }
 
 @Composable
+fun RecentGameCard(
+    title: String,
+    subtitle: String,
+    avatarEmoji: String = "👤",
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SurfaceDark)
+            .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Avatar Circle
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(Color(0xFF252538), CircleShape)
+                .border(1.dp, Color(0xFF32324A), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = avatarEmoji,
+                fontSize = 20.sp
+            )
+        }
+
+        // Title and Subtitle Column
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Start
+            )
+            Text(
+                text = subtitle,
+                color = TextGray,
+                fontWeight = FontWeight.Normal,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Start
+            )
+        }
+
+        // Left Arrow for RTL flow
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowLeft,
+            contentDescription = null,
+            tint = TextGray,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+@Composable
 fun HomeScreen(
     onStartNewGame: () -> Unit,
     onShowHistory: () -> Unit
 ) {
     var showAboutDialog by remember { mutableStateOf(false) }
+    var currentTab by remember { mutableStateOf("خانه") }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BackgroundDark),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-                .widthIn(max = 400.dp)
-        ) {
-            // App Title/Logo Area
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Large stylish emoji/logo
-                Text(
-                    text = "🎭",
-                    fontSize = 64.sp,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = "مدیریت بازی مافیا",
-                    style = MaterialTheme.typography.headlineLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = AccentCrimson,
-                        fontSize = 32.sp,
-                        textAlign = TextAlign.Center
-                    ),
-                    modifier = Modifier.testTag("app_logo_title")
-                )
-                Text(
-                    text = "دستیار هوشمند و پیشرفته مدیریت سناریوهای مافیا",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = TextSecondary,
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center
+    Scaffold(
+        bottomBar = {
+            // Elegant navigation bar conforming to the design
+            Column {
+                Divider(color = BorderColor, thickness = 1.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(SurfaceDark)
+                        .navigationBarsPadding()
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val tabs = listOf(
+                        Triple("خانه", Icons.Default.Home, "خانه"),
+                        Triple("بازی‌ها", Icons.Default.PlayArrow, "بازیها"),
+                        Triple("قالب‌ها", Icons.Default.List, "قالبها"),
+                        Triple("تنظیمات", Icons.Default.Settings, "تنظیمات")
                     )
-                )
+
+                    // Display Persian RTL tabs nicely
+                    tabs.forEach { (label, icon, key) ->
+                        val isSelected = currentTab == key
+                        val activeColor = PrimaryPurple
+                        val inactiveColor = TextGray
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    currentTab = key
+                                    if (key != "خانه") {
+                                        onShowHistory() // Standard Toast for coming soon
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                tint = if (isSelected) activeColor else inactiveColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = label,
+                                color = if (isSelected) TextWhite else inactiveColor,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        containerColor = BackgroundDark,
+        modifier = Modifier.fillMaxSize()
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(BackgroundDark)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // Screen Header title (centered)
+            Text(
+                text = "داشبورد اصلی",
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+
+            // Welcome Card Area
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SurfaceDark)
+                    .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Crown emoji
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color(0xFF2E2E3E), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "👑",
+                        fontSize = 24.sp
+                    )
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "خوش آمدی، گرداننده",
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Start
+                    )
+                    Text(
+                        text = "بازی جدید بساز یا ادامه بده.",
+                        color = TextGray,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Start
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Start New Game Button
+            // Massive primary actions button switch to setup
             Button(
                 onClick = onStartNewGame,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentCrimson,
+                    containerColor = PrimaryPurple,
                     contentColor = Color.White
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(60.dp)
                     .testTag("start_new_game_button")
             ) {
                 Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "شروع بازی جدید",
+                        text = "➕ ساخت بازی جدید",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        textAlign = TextAlign.Center
                     )
                 }
             }
 
-            // Match History Button
-            Button(
-                onClick = onShowHistory,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = SurfaceDark,
-                    contentColor = TextPrimary
-                ),
-                border = BorderStroke(1.dp, BorderColor),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("match_history_button")
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Recent Games Section
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.List,
-                        contentDescription = null,
-                        tint = AccentGold,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "تاریخچه بازیها",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                Text(
+                    text = "بازی‌های اخیر",
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                )
+
+                RecentGameCard(
+                    title = "بازی ۱۲ نفره حرفه‌ای",
+                    subtitle = "دیروز ۲۲:۲۵",
+                    avatarEmoji = "🧑‍💻",
+                    onClick = onStartNewGame
+                )
+
+                RecentGameCard(
+                    title = "بازی ۸ نفره کلاسیک",
+                    subtitle = "دو روز پیش ۲۱:۱۵",
+                    avatarEmoji = "🕵️",
+                    onClick = onStartNewGame
+                )
+
+                RecentGameCard(
+                    title = "بازی ۱۰ نفره دوستانه",
+                    subtitle = "سه روز پیش ۲۳:۴۵",
+                    avatarEmoji = "👥",
+                    onClick = onStartNewGame
+                )
             }
 
-            // About App Button
-            OutlinedButton(
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // About App Mini button
+            TextButton(
                 onClick = { showAboutDialog = true },
-                border = BorderStroke(1.dp, BorderColor),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = TextSecondary
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("about_app_button")
+                modifier = Modifier.testTag("about_app_text_button")
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "درباره برنامه",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                }
+                Text(
+                    text = "ℹ️ درباره برنامه و راهنما",
+                    color = TextGray,
+                    fontSize = 13.sp,
+                    textDecoration = TextDecoration.Underline,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
