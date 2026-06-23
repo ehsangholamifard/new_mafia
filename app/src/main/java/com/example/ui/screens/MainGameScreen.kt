@@ -2376,6 +2376,9 @@ fun PlayStageContent(
     }
 
     var showLogsStream by remember { mutableStateOf(true) }
+    var showGlobalNotesDialog by remember { mutableStateOf(false) }
+    var globalNotesText by remember { mutableStateOf("") }
+    var showLocalHistoryDialog by remember { mutableStateOf(false) }
 
     var isVotingCompleted by remember(phase) { mutableStateOf(false) }
     val playersInDefense = remember(phase) { mutableStateListOf<Int>() }
@@ -2383,258 +2386,225 @@ fun PlayStageContent(
     var showDefenseResultDialog by remember { mutableStateOf(false) }
     var defenseEligibleNames by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Dialog states
-    var playerForKillerSelection by remember { mutableStateOf<PlayerEntity?>(null) }
-    var showLastMoveDrawDialog by remember { mutableStateOf(false) }
-    var drawnCardResult by remember { mutableStateOf<LastMoveCard?>(null) }
-    var showGameOverDialog by remember { mutableStateOf(false) }
-    var winnerTeamSelection by remember { mutableStateOf("Citizen") }
-    var gameOverReasonInput by remember { mutableStateOf("") }
-    var showNightReportDialog by remember { mutableStateOf(false) }
-    var nightReportContents by remember { mutableStateOf<List<String>>(emptyList()) }
     var showNewNightSummaryDialog by remember { mutableStateOf(false) }
     var showInquiryPromptDialog by remember { mutableStateOf(false) }
-    var showDayStatsDialog by remember { mutableStateOf(false) }
     var showEndDayConfirmationDialog by remember { mutableStateOf(false) }
-
-    // Helper to generate a smart structured night summary
-    fun generateNightSummary(allLogs: List<GameLogEntity>, playersList: List<PlayerEntity>): List<String> {
-        val reversed = allLogs.reversed()
-        val nightTransitionIdx = reversed.indexOfFirst { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
-        val relevantLogs = if (nightTransitionIdx != -1) reversed.subList(0, nightTransitionIdx) else reversed
-
-        val killsLogs = relevantLogs.filter { it.message.contains("💀") && !it.message.contains("کنش") && !it.message.contains("برچسب") }
-        val slaughterLogs = relevantLogs.filter { it.message.contains("🔪") }
-        val muteLogs = relevantLogs.filter { it.message.contains("🔇") }
-        val blockLogs = relevantLogs.filter { it.message.contains("🚫") }
-        val saveLogs = relevantLogs.filter { it.message.contains("🩺") }
-
-        fun extractName(msg: String): String? {
-            val start = msg.indexOf("«")
-            val end = msg.indexOf("»")
-            return if (start != -1 && end != -1 && end > start) {
-                msg.substring(start + 1, end)
-            } else null
-        }
-
-        val summary = mutableListOf<String>()
-
-        val nightKilledNames = killsLogs.mapNotNull { extractName(it.message) }.distinct()
-        if (nightKilledNames.isNotEmpty()) {
-            summary.add("💀 تلفات دیشب: ${nightKilledNames.joinToString("، ")} کشته شدند.")
-        }
-
-        val slaughteredNames = slaughterLogs.mapNotNull { extractName(it.message) }.distinct()
-        if (slaughteredNames.isNotEmpty()) {
-            summary.add("🔪 سلاخی دیشب: بازیکن «${slaughteredNames.joinToString("، ")}» سلاخی شد!")
-        } else if (slaughterLogs.isNotEmpty()) {
-            summary.add("🔪 سلاخی: بله، دیشب سلاخی رخ داد!")
-        }
-
-        val mutedNames = muteLogs.mapNotNull { extractName(it.message) }.distinct()
-        if (mutedNames.isNotEmpty()) {
-            summary.add("🔇 سکوت دیشب: ${mutedNames.joinToString("، ")} امروز حق صحبت ندارند.")
-        } else if (muteLogs.isNotEmpty()) {
-            summary.add("🔇 سکوت: امروز برخی بازیکنان حق صحبت ندارند.")
-        }
-
-        val blockedNames = blockLogs.mapNotNull { extractName(it.message) }.distinct()
-        if (blockedNames.isNotEmpty()) {
-            summary.add("🚫 بلاک دیشب: بازیکنان «${blockedNames.joinToString("، ")}» بلاک شدند.")
-        } else if (blockLogs.isNotEmpty()) {
-            summary.add("🚫 بلاک: اقداماتی در شب مسدود شد.")
-        }
-
-        val savedNames = saveLogs.mapNotNull { extractName(it.message) }.distinct()
-        if (savedNames.isNotEmpty()) {
-            summary.add("🩺 دکتر/نجات‌دهنده دیشب: بازیکنان «${savedNames.joinToString("، ")}» نجات پیدا کردند.")
-        } else if (saveLogs.isNotEmpty()) {
-            summary.add("🩺 دکتر/نجات‌دهنده: اقدامات نجات در شب انجام شد.")
-        }
-
-        // Add raw events for details if any
-        val detailedEvents = relevantLogs.filter { 
-            it.message.contains("شات") || it.message.contains("تفنگ") 
-        }.map { "- ${it.message}" }
-        
-        if (detailedEvents.isNotEmpty()) {
-            summary.add("🔫 وضعیت تفنگ‌ها و وقایع خاص:\n" + detailedEvents.joinToString("\n"))
-        }
-
-        if (summary.isEmpty()) {
-            summary.add("🕊️ شب آرامی بود و هیچ اتفاق خاصی رخ نداد.")
-        }
-
-        return summary
-    }
+    var showDayStatsDialog by remember { mutableStateOf(false) }
+    var showNightReportDialog by remember { mutableStateOf(false) }
+    var showGameOverDialog by remember { mutableStateOf(false) }
+    var showLastMoveDrawDialog by remember { mutableStateOf(false) }
+    var winnerTeamSelection by remember { mutableStateOf("") }
+    var gameOverReasonInput by remember { mutableStateOf("") }
+    var playerForKillerSelection by remember { mutableStateOf<PlayerEntity?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 14.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(top = 10.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Quick Actions & Phase info dashboard
-        Card(
-            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-            border = BorderStroke(1.dp, BorderColor),
-            modifier = Modifier.fillMaxWidth()
+        // Step 1: Header Section (Phase & Timer)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "مدیریت بازی",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (phase == "Night") PrimaryPurple else AccentGold, CircleShape)
+                    )
+                    Text(
+                        text = if (phase == "Night") "شب $currentRound 🌙" else "روز $currentRound ☀️",
+                        color = if (phase == "Night") PrimaryPurple else AccentGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Glowing moon/sun icon
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(
+                        color = if (phase == "Night") PrimaryPurple.copy(alpha = 0.15f) else AccentGold.copy(alpha = 0.15f),
+                        shape = CircleShape
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (phase == "Night") PrimaryPurple else AccentGold,
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (phase == "Night") "🌙" else "☀️",
+                    fontSize = 18.sp
+                )
+            }
+        }
+
+        // Digital Timer: Prominent centered timer
+        val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(vertical = 10.dp)
+                .size(160.dp)
+                .background(Color(0xFF141324), CircleShape)
+                .border(2.dp, PrimaryPurple, CircleShape)
+                .then(
+                    Modifier.shadow(12.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                )
+                .clickable { onShowTimerModalChange(true) },
+            contentAlignment = Alignment.Center
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Text(
+                    text = formattedTime,
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "زمان باقیمانده",
+                    color = TextGray,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // Step 4: End Phase (پایان مرحله) button with Purple-to-Indigo gradient
+        Button(
+            onClick = {
+                if (phase == "Night") {
+                    showNewNightSummaryDialog = true
+                } else {
+                    showEndDayConfirmationDialog = true
+                }
+            },
+            enabled = if (phase == "Day") isVotingCompleted else true,
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White,
+                disabledContainerColor = Color(0xFF23232C)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .background(
+                    brush = if (phase == "Day" && !isVotingCompleted) {
+                        Brush.horizontalGradient(colors = listOf(Color(0xFF23232C), Color(0xFF1C1C22)))
+                    } else {
+                        Brush.horizontalGradient(colors = listOf(PrimaryPurple, Color(0xFF3F51B5)))
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                )
+        ) {
+            Text(
+                text = if (phase == "Night") "پایان مرحله (شروع روز) ☀️" else "پایان مرحله (شروع شب) 🌙",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = if (phase == "Day" && !isVotingCompleted) Color.Gray else Color.White
+            )
+        }
+
+        // Stats summary band
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SurfaceDark, RoundedCornerShape(10.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "👥 کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "🔍 استعلام مفسر: $remainingInquiries از $totalInquiries",
+                color = AccentGold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (phase == "Day") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val unusedLiveGunPlayers = players.filter { it.isSelected && it.isAlive && it.hasLiveGunThisRound && !it.usedLiveGun }
+                        if (unusedLiveGunPlayers.isNotEmpty()) {
+                            val names = unusedLiveGunPlayers.joinToString("، ") { it.name }
+                            triggerConfirmation(
+                                "تنبلی تفنگ جنگی ⚠️",
+                                "دارنده تفنگ جنگی («$names») از تفنگش استفاده نکرده است و کشته می‌شود. تایید میکنید؟"
+                            ) {
+                                unusedLiveGunPlayers.forEach { onToggleLife(it.id) }
+                                showVotingDialog = true
+                            }
+                        } else {
+                            showVotingDialog = true
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentGold,
+                        contentColor = BackgroundDark
+                    ),
+                    modifier = Modifier.weight(1f).height(40.dp).testTag("start_voting_button")
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .background(
-                                    color = if (phase == "Night") Color(0xFF1E1035) else Color(0xFF352B10),
-                                    shape = CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (phase == "Night") "🌙" else "☀️",
-                                fontSize = 20.sp
-                            )
-                        }
-
-                        Column {
-                            Text(
-                                text = if (phase == "Night") "فاز شب سناریو 🌙" else "فاز روز سناریو ☀️",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "تعداد کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
-                                color = TextSecondary,
-                                fontSize = 11.sp
-                            )
-                            Text(
-                                text = "استعلام مفسر: $remainingInquiries از $totalInquiries 🔍",
-                                color = AccentGold,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            if (phase == "Night") {
-                                showNewNightSummaryDialog = true
-                            } else {
-                                showEndDayConfirmationDialog = true
-                            }
-                        },
-                        enabled = if (phase == "Day") isVotingCompleted else true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (phase == "Night") AccentGold else Color(0xFF1C1C2E),
-                            contentColor = if (phase == "Night") BackgroundDark else Color.White,
-                            disabledContainerColor = Color(0xFF23232C),
-                            disabledContentColor = Color.Gray
-                        ),
-                        modifier = Modifier.height(38.dp)
-                    ) {
-                        Text(
-                            text = if (phase == "Night") "طلوع آفتاب (شروع روز) ☀️" else "غروب آفتاب (شروع شب) 🌙",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
+                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Text(text = "رای گیری 🗳️", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
 
-                if (phase == "Day") {
-                    HorizontalDivider(color = BorderColor.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 4.dp))
-                    
-                    // Start Voting Button (شروع رای گیری)
-                    Button(
-                        onClick = {
-                            val unusedLiveGunPlayers = players.filter { it.isSelected && it.isAlive && it.hasLiveGunThisRound && !it.usedLiveGun }
-                            if (unusedLiveGunPlayers.isNotEmpty()) {
-                                val names = unusedLiveGunPlayers.joinToString("، ") { it.name }
-                                triggerConfirmation(
-                                    "تنبلی تفنگ جنگی ⚠️",
-                                    "دارنده تفنگ جنگی («$names») از تفنگش استفاده نکرده است و کشته می‌شود. تایید میکنید؟"
-                                ) {
-                                    unusedLiveGunPlayers.forEach { onToggleLife(it.id) }
-                                    showVotingDialog = true
-                                }
-                            } else {
-                                showVotingDialog = true
-                            }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentGold,
-                            contentColor = BackgroundDark
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("start_voting_button")
+                Button(
+                    onClick = { showDayStatsDialog = true },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1E3A5F),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.weight(1f).height(40.dp).testTag("day_stats_button")
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "شروع رای گیری 🗳️",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = { showDayStatsDialog = true },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF1E3A5F),
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("day_stats_button")
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = AccentGold
-                            )
-                            Text(
-                                text = "📊 آمار زنده و کشته‌های جناح‌ها (روز)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color.White
-                            )
-                        }
+                        Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentGold)
+                        Text(text = "آمار روز 📊", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
@@ -2654,17 +2624,17 @@ fun PlayStageContent(
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                border = BorderStroke(1.5.dp, AccentGold.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, BorderColor),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("night_queue_card"),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Header
+                    // Header Section
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2672,9 +2642,9 @@ fun PlayStageContent(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("🌙", fontSize = 18.sp)
+                            Text("🌙", fontSize = 16.sp)
                             Text(
                                 text = "صف بیداری پویای شب ⚙️",
                                 fontWeight = FontWeight.Bold,
@@ -2683,19 +2653,15 @@ fun PlayStageContent(
                             )
                         }
                         
-                        if (nightQueue.isNotEmpty()) {
-                            val curItem = nightQueue.getOrNull(currentNightQueueIndex)
-                            val priority = curItem?.ability?.nightPriority
-                            Text(
-                                text = "اولویت بیداری: ${priority ?: "-"}",
-                                color = AccentGold,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                modifier = Modifier
-                                    .background(AccentGold.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Text(
+                            text = "گام ${currentNightQueueIndex + 1} از ${nightQueue.size}",
+                            color = AccentGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            modifier = Modifier
+                                .background(AccentGold.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
 
                     HorizontalDivider(color = BorderColor.copy(alpha = 0.4f))
@@ -2709,6 +2675,113 @@ fun PlayStageContent(
                             textAlign = TextAlign.Center
                         )
                     } else {
+                        // Step 2: Redesigned waking queue list of roles
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 160.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 2.dp)
+                        ) {
+                            nightQueue.forEachIndexed { idx, item ->
+                                val isActive = idx == currentNightQueueIndex
+                                val isCompleted = idx < currentNightQueueIndex
+
+                                val cardBorder = if (isActive) {
+                                    BorderStroke(1.5.dp, PrimaryPurple)
+                                } else {
+                                    BorderStroke(1.dp, BorderColor)
+                                }
+
+                                val cardBg = if (isActive) {
+                                    Color(0xFF1C1B30)
+                                } else if (isCompleted) {
+                                    SurfaceDark.copy(alpha = 0.5f)
+                                } else {
+                                    Color(0xFF141324)
+                                }
+
+                                val textColor = if (isActive) Color.White else if (isCompleted) TextGray else Color.White
+
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                                    border = cardBorder,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(
+                                            if (isActive) Modifier.shadow(6.dp, RoundedCornerShape(10.dp), spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                                            else Modifier
+                                        )
+                                        .clickable {
+                                            currentNightQueueIndex = idx
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Number badge
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(
+                                                        color = if (isActive) PrimaryPurple else if (isCompleted) Color.Gray.copy(alpha = 0.3f) else Color(0xFF424242),
+                                                        shape = CircleShape
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = (idx + 1).toString(),
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+
+                                            Text(
+                                                text = "${item.player.name} — ${item.ability.name}",
+                                                color = textColor,
+                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 11.sp,
+                                                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                                            )
+                                        }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (isCompleted) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "انجام شد",
+                                                    tint = AccentCitizen,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = "00:30",
+                                                color = if (isActive) PrimaryPurple else TextGray,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = BorderColor.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 4.dp))
+
                         val currentItem = nightQueue[currentNightQueueIndex]
                         
                         // Active Target Display (Required)
@@ -3088,10 +3161,10 @@ fun PlayStageContent(
                                 }
 
                                 hackerAlertMessage?.let { msg ->
-                                    StyledConfirmationDialog(
+                                    InquiryResultDialog(
                                         title = "نتیجه استعلام هکر 📡",
                                         message = msg,
-                                        onConfirm = { hackerAlertMessage = null },
+                                        players = players,
                                         onDismiss = { hackerAlertMessage = null }
                                     )
                                 }
@@ -4524,290 +4597,195 @@ fun PlayStageContent(
                                     )
 
                                     // Target 1 Column
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFF140F22), RoundedCornerShape(8.dp))
-                                            .padding(8.dp)
-                                    ) {
-                                        Text("🎯 بازیکن تفنگ‌دار اول:", color = Color.Gray, fontSize = 11.sp)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(Color(0xFF191928), RoundedCornerShape(6.dp))
-                                                .border(1.dp, BorderColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                                .clickable { expanded1 = true }
-                                                .padding(10.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = targetPlayer1?.name ?: "انتخاب بازیکن هدف اول... 👥",
-                                                    color = if (targetPlayer1 != null) Color.White else Color.Gray,
-                                                    fontSize = 11.sp
-                                                )
-                                                Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
-                                            }
-                                            DropdownMenu(
-                                                expanded = expanded1,
-                                                onDismissRequest = { expanded1 = false },
-                                                modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
-                                                    onClick = { targetId1 = null; expanded1 = false }
-                                                )
-                                                alivePlayersForGuns.forEach { aliveP ->
-                                                    DropdownMenuItem(
-                                                        text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
-                                                        onClick = { targetId1 = aliveP.id; expanded1 = false }
-                                                    )
-                                                }
-                                            }
-                                        }
+                                     Column(
+                                         modifier = Modifier
+                                             .fillMaxWidth()
+                                             .background(Color(0xFF140F22), RoundedCornerShape(8.dp))
+                                             .padding(8.dp)
+                                     ) {
+                                         Text("🎯 بازیکن تفنگ‌دار اول:", color = Color.Gray, fontSize = 11.sp)
+                                         Spacer(modifier = Modifier.height(4.dp))
+                                         Box(
+                                             modifier = Modifier
+                                                 .fillMaxWidth()
+                                                 .background(Color(0xFF191928), RoundedCornerShape(6.dp))
+                                                 .border(1.dp, BorderColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                                 .clickable { expanded1 = true }
+                                                 .padding(10.dp)
+                                         ) {
+                                             Row(
+                                                 modifier = Modifier.fillMaxWidth(),
+                                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                                 verticalAlignment = Alignment.CenterVertically
+                                             ) {
+                                                 Text(
+                                                     text = targetPlayer1?.name ?: "انتخاب بازیکن هدف اول... 👥",
+                                                     color = if (targetPlayer1 != null) Color.White else Color.Gray,
+                                                     fontSize = 11.sp
+                                                 )
+                                                 Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                             }
+                                             DropdownMenu(
+                                                 expanded = expanded1,
+                                                 onDismissRequest = { expanded1 = false },
+                                                 modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                             ) {
+                                                 DropdownMenuItem(
+                                                     text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
+                                                     onClick = { targetId1 = null; expanded1 = false }
+                                                 )
+                                                 alivePlayersForGuns.forEach { aliveP ->
+                                                     DropdownMenuItem(
+                                                         text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                                         onClick = { targetId1 = aliveP.id; expanded1 = false }
+                                                     )
+                                                 }
+                                             }
+                                         }
 
-                                        if (targetPlayer1 != null) {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                val isBlankEnabled1 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer1.id, false)
-                                                        gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer1.name}» داده شد."
-                                                        targetId1 = null
-                                                    },
-                                                    enabled = isBlankEnabled1,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
-                                                    modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_1"),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("تیر مشقی 🔫", color = if (isBlankEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                }
+                                         if (targetPlayer1 != null) {
+                                             Spacer(modifier = Modifier.height(8.dp))
+                                             Row(
+                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                 modifier = Modifier.fillMaxWidth()
+                                             ) {
+                                                 val isBlankEnabled1 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
+                                                 Button(
+                                                     onClick = {
+                                                         viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer1.id, false)
+                                                         gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer1.name}» داده شد."
+                                                         targetId1 = null
+                                                     },
+                                                     enabled = isBlankEnabled1,
+                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
+                                                     modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_1"),
+                                                     shape = RoundedCornerShape(8.dp)
+                                                 ) {
+                                                     Text("تیر مشقی 🔫", color = if (isBlankEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                 }
 
-                                                val anyLiveGunTonight1 = players.any { it.hasLiveGunThisRound }
-                                                val isLiveEnabled1 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight1 && (liveCap == null || liveCap.remainingCount > 0)
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer1.id, true)
-                                                        gunAlertMessage = "تیر جنگی با موفقیت به بازیکن «${targetPlayer1.name}» داده شد."
-                                                        targetId1 = null
-                                                    },
-                                                    enabled = isLiveEnabled1,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
-                                                    modifier = Modifier.weight(1f).testTag("queue_musketeer_live_gun_1"),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("تیر جنگی ⚔️", color = if (isLiveEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
+                                                 val anyLiveGunTonight1 = players.any { it.hasLiveGunThisRound }
+                                                 val isLiveEnabled1 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight1 && (liveCap == null || liveCap.remainingCount > 0)
+                                                 Button(
+                                                     onClick = {
+                                                         viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer1.id, true)
+                                                         gunAlertMessage = "تیر جنگی با موفقیت به بازیکن «${targetPlayer1.name}» داده شد."
+                                                         targetId1 = null
+                                                     },
+                                                     enabled = isLiveEnabled1,
+                                                     colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
+                                                     modifier = Modifier.weight(1f).testTag("queue_musketeer_live_gun_1"),
+                                                     shape = RoundedCornerShape(8.dp)
+                                                 ) {
+                                                     Text("تیر جنگی ⚔️", color = if (isLiveEnabled1) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                 }
+                                             }
+                                         }
+                                     }
 
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                     Spacer(modifier = Modifier.height(6.dp))
 
-                                    // Target 2 Column
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFF140F22), RoundedCornerShape(8.dp))
-                                            .padding(8.dp)
-                                    ) {
-                                        Text("🎯 بازیکن تفنگ‌دار دوم:", color = Color.Gray, fontSize = 11.sp)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(Color(0xFF191928), RoundedCornerShape(6.dp))
-                                                .border(1.dp, BorderColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                                .clickable { expanded2 = true }
-                                                .padding(10.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = targetPlayer2?.name ?: "انتخاب بازیکن هدف دوم... 👥",
-                                                    color = if (targetPlayer2 != null) Color.White else Color.Gray,
-                                                    fontSize = 11.sp
-                                                )
-                                                Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
-                                            }
-                                            DropdownMenu(
-                                                expanded = expanded2,
-                                                onDismissRequest = { expanded2 = false },
-                                                modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
-                                                    onClick = { targetId2 = null; expanded2 = false }
-                                                )
-                                                alivePlayersForGuns.filter { it.id != (targetId1 ?: -1) }.forEach { aliveP ->
-                                                    DropdownMenuItem(
-                                                        text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
-                                                        onClick = { targetId2 = aliveP.id; expanded2 = false }
-                                                    )
-                                                }
-                                            }
-                                        }
+                                     // Target 2 Column
+                                     Column(
+                                         modifier = Modifier
+                                             .fillMaxWidth()
+                                             .background(Color(0xFF140F22), RoundedCornerShape(8.dp))
+                                             .padding(8.dp)
+                                     ) {
+                                         Text("🎯 بازیکن تفنگ‌دار دوم:", color = Color.Gray, fontSize = 11.sp)
+                                         Spacer(modifier = Modifier.height(4.dp))
+                                         Box(
+                                             modifier = Modifier
+                                                 .fillMaxWidth()
+                                                 .background(Color(0xFF191928), RoundedCornerShape(6.dp))
+                                                 .border(1.dp, BorderColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                                 .clickable { expanded2 = true }
+                                                 .padding(10.dp)
+                                         ) {
+                                             Row(
+                                                 modifier = Modifier.fillMaxWidth(),
+                                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                                 verticalAlignment = Alignment.CenterVertically
+                                             ) {
+                                                 Text(
+                                                     text = targetPlayer2?.name ?: "انتخاب بازیکن هدف دوم... 👥",
+                                                     color = if (targetPlayer2 != null) Color.White else Color.Gray,
+                                                     fontSize = 11.sp
+                                                 )
+                                                 Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                             }
+                                             DropdownMenu(
+                                                 expanded = expanded2,
+                                                 onDismissRequest = { expanded2 = false },
+                                                 modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                             ) {
+                                                 DropdownMenuItem(
+                                                     text = { Text("هیچکدام", color = Color.Gray, fontSize = 11.sp) },
+                                                     onClick = { targetId2 = null; expanded2 = false }
+                                                 )
+                                                 alivePlayersForGuns.filter { it.id != (targetId1 ?: -1) }.forEach { aliveP ->
+                                                     DropdownMenuItem(
+                                                         text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                                         onClick = { targetId2 = aliveP.id; expanded2 = false }
+                                                     )
+                                                 }
+                                             }
+                                         }
 
-                                        if (targetPlayer2 != null) {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                val isBlankEnabled2 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, false)
-                                                        gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
-                                                        targetId2 = null
-                                                    },
-                                                    enabled = isBlankEnabled2,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
-                                                    modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_2"),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("تیر مشقی 🔫", color = if (isBlankEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                }
+                                         if (targetPlayer2 != null) {
+                                             Spacer(modifier = Modifier.height(8.dp))
+                                             Row(
+                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                 modifier = Modifier.fillMaxWidth()
+                                             ) {
+                                                 val isBlankEnabled2 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
+                                                 Button(
+                                                     onClick = {
+                                                         viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, false)
+                                                         gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
+                                                         targetId2 = null
+                                                     },
+                                                     enabled = isBlankEnabled2,
+                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
+                                                     modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_2"),
+                                                     shape = RoundedCornerShape(8.dp)
+                                                 ) {
+                                                     Text("تیر مشقی 🔫", color = if (isBlankEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                 }
 
-                                                val anyLiveGunTonight2 = players.any { it.hasLiveGunThisRound }
-                                                val isLiveEnabled2 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight2 && (liveCap == null || liveCap.remainingCount > 0)
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, true)
-                                                        gunAlertMessage = "تیر جنگی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
-                                                        targetId2 = null
-                                                    },
-                                                    enabled = isLiveEnabled2,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
-                                                    modifier = Modifier.weight(1f).testTag("queue_musketeer_live_gun_2"),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("تیر جنگی ⚔️", color = if (isLiveEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                                                 val anyLiveGunTonight2 = players.any { it.hasLiveGunThisRound }
+                                                 val isLiveEnabled2 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight2 && (liveCap == null || liveCap.remainingCount > 0)
+                                                 Button(
+                                                     onClick = {
+                                                         viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, true)
+                                                         gunAlertMessage = "تیر جنگی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
+                                                         targetId2 = null
+                                                     },
+                                                     enabled = isLiveEnabled2,
+                                                     colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson, disabledContainerColor = Color(0xFF1E293B)),
+                                                     modifier = Modifier.weight(1f).testTag("queue_musketeer_live_gun_2"),
+                                                     shape = RoundedCornerShape(8.dp)
+                                                 ) {
+                                                     Text("تیر جنگی ⚔️", color = if (isLiveEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                 }
+                                             }
+                                         }
+                                     }
 
-                            "REVEAL_MAFIA" -> {
-                                RevealActionContent(
-                                    currentItem = currentItem,
-                                    players = players,
-                                    caps = caps,
-                                    viewModel = viewModel
-                                )
-                            }
-
-                            "REVIVE" -> {
-                                ReviveActionContent(
-                                    currentItem = currentItem,
-                                    players = players,
-                                    caps = caps,
-                                    viewModel = viewModel,
-                                    triggerConfirmation = triggerConfirmation
-                                )
-                            }
-
-                            "NATO_GUESS" -> {
-                                NatoGuessActionContent(
-                                    currentItem = currentItem,
-                                    players = players,
-                                    caps = caps,
-                                    viewModel = viewModel
-                                )
-                            }
-
-                            "SABOTAGE" -> {
-                                SabotageActionContent(
-                                    currentItem = currentItem,
-                                    players = players,
-                                    caps = caps,
-                                    viewModel = viewModel
-                                )
-                            }
-
-                            "CHURCHILL_SHOOT" -> {
-                                ChurchillShootActionContent(
-                                    currentItem = currentItem,
-                                    players = players,
-                                    caps = caps,
-                                    viewModel = viewModel,
-                                    currentRound = currentRound,
-                                    triggerConfirmation = triggerConfirmation
-                                )
-                            }
-                        }
-
-                        // Navigator buttons (Next / Prev)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    if (currentNightQueueIndex > 0) {
-                                        currentNightQueueIndex--
-                                    }
-                                },
-                                enabled = currentNightQueueIndex > 0,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("night_queue_prev_button"),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, BorderColor),
-                                contentPadding = PaddingValues(vertical = 8.dp)
-                            ) {
-                                Text("👉 قبلی", color = if (currentNightQueueIndex > 0) Color.White else Color.Gray, fontSize = 11.sp)
-                            }
-                            
-                            Text(
-                                text = "گام ${currentNightQueueIndex + 1} از ${nightQueue.size}",
-                                color = TextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Button(
-                                onClick = {
-                                    if (currentNightQueueIndex < nightQueue.size - 1) {
-                                        currentNightQueueIndex++
-                                    }
-                                },
-                                enabled = currentNightQueueIndex < nightQueue.size - 1,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("night_queue_next_button"),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = AccentGold,
-                                    disabledContainerColor = Color(0xFF1C1C2E)
-                                ),
-                                contentPadding = PaddingValues(vertical = 8.dp)
-                            ) {
-                                Text("بعدی 👈", color = if (currentNightQueueIndex < nightQueue.size - 1) BackgroundDark else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Live players ledger
+                                     if (gunAlertMessage != null) {
+                                         Text(text = gunAlertMessage!!, color = AccentGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                     }
+                                 }
+                             }
+                         }
+                     }
+                  }
+              }
+          }
+                     
+                     // Step 3: Target Selection UI (The Modern Grid of Circular Avatars)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -4818,8 +4796,8 @@ fun PlayStageContent(
                 fontSize = 13.sp
             )
             Text(
-                text = "روی بازیکنی ضربه بزنید تا قابلیتها یا یادداشت را مدیریت کنید",
-                color = Color.Gray,
+                text = "جهت مدیریت وضعیت یا یادداشت روی بازیکن ضربه بزنید",
+                color = TextSecondary,
                 fontSize = 10.sp
             )
         }
@@ -4835,8 +4813,8 @@ fun PlayStageContent(
                     val independent = active.filter { it.assignedRoleTeam == "Independent" }
                     val mafia = active.filter { it.assignedRoleTeam == "Mafia" }
                     val citizens = active.filter { it.assignedRoleTeam == "Citizen" }
-                    val others = active.filter { it.assignedRoleTeam !in listOf("Independent", "Mafia", "Citizen") }
-                    independent + mafia + citizens + others
+                    val otherList = active.filter { it.assignedRoleTeam != "Independent" && it.assignedRoleTeam != "Mafia" && it.assignedRoleTeam != "Citizen" }
+                    independent + mafia + citizens + otherList
                 } else {
                     active
                 }
@@ -4846,81 +4824,195 @@ fun PlayStageContent(
                 EmptyListTip(text = "هیچ بازیکن منتخبی وجود ندارد. دکمه بازنشانی را بفشارید.")
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(activeHandheldPlayers) { player ->
-                        PlayerLiveCard(
-                            player = player,
-                            phase = phase,
-                            players = players,
-                            isInDefense = player.id in playersInDefense,
-                            onClick = { onPlayerClick(player) },
-                            onRegisterEvent = { eventType ->
-                                if (eventType == "KILL") {
-                                    playerForKillerSelection = player
-                                } else {
-                                    onRegisterEvent(player.id, eventType)
+                    val chunkedPlayers = activeHandheldPlayers.chunked(4)
+                    items(chunkedPlayers) { rowPlayers ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowPlayers.forEach { player ->
+                                val isDead = !player.isAlive
+                                val isTargeted = player.id in playersInDefense || player.isKilledToday
+                                val isMuted = player.isMuted
+                                val isBlocked = player.isBlockedThisNight
+                                val hasGun = player.hasLiveGunThisRound && !player.usedLiveGun
+
+                                val emoji = when {
+                                    isDead -> "💀"
+                                    player.assignedRoleTeam == "Mafia" -> "🕶️"
+                                    player.assignedRoleTeam == "Citizen" -> "🕊️"
+                                    else -> "🎭"
                                 }
-                            },
-                            onToggleBlock = { onToggleBlock(player.id) },
-                            onToggleMute = { onToggleMute(player.id) },
-                            onToggleLife = { onToggleLife(player.id) },
-                            onUseLiveGun = { onUseLiveGun(player) }
-                        )
+
+                                val avatarBg = when {
+                                    isDead -> Color(0xFF1B1B2A)
+                                    isTargeted -> PrimaryPurple.copy(alpha = 0.2f)
+                                    player.assignedRoleTeam == "Mafia" -> AccentCrimson.copy(alpha = 0.15f)
+                                    player.assignedRoleTeam == "Citizen" -> AccentCitizen.copy(alpha = 0.15f)
+                                    else -> AccentGold.copy(alpha = 0.15f)
+                                }
+
+                                val avatarBorderColor = when {
+                                    isDead -> Color(0xFF2E2E3C)
+                                    isTargeted -> PrimaryPurple
+                                    player.assignedRoleTeam == "Mafia" -> AccentCrimson
+                                    player.assignedRoleTeam == "Citizen" -> AccentCitizen
+                                    else -> AccentGold
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onPlayerClick(player) }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .background(avatarBg, CircleShape)
+                                            .border(
+                                                width = if (isTargeted) 2.dp else 1.dp,
+                                                color = avatarBorderColor,
+                                                shape = CircleShape
+                                            )
+                                            .then(
+                                                if (isTargeted) Modifier.shadow(6.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                                                else Modifier
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(emoji, fontSize = 20.sp)
+
+                                        // Badges layered on top of the avatar
+                                        Box(
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomCenter)
+                                                    .padding(bottom = 2.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                if (isBlocked) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(13.dp)
+                                                            .background(Color.Red, CircleShape),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text("🚫", fontSize = 8.sp)
+                                                    }
+                                                }
+                                                if (isMuted) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(13.dp)
+                                                            .background(Color.Yellow, CircleShape),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text("🔇", fontSize = 8.sp)
+                                                    }
+                                                }
+                                                if (hasGun) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(13.dp)
+                                                            .background(Color.Green, CircleShape),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text("🔫", fontSize = 8.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (isDead) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("☠️", fontSize = 14.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Text(
+                                        text = player.name,
+                                        color = if (isTargeted) PrimaryPurple else Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isTargeted) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    val roleText = player.assignedRoleName ?: "نامعلوم"
+                                    Text(
+                                        text = if (isDead) "حذف شده" else roleText,
+                                        color = Color.Gray,
+                                        fontSize = 9.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Fill remaining empty spot in the grid
+                            val remaining = 4 - rowPlayers.size
+                            if (remaining > 0) {
+                                repeat(remaining) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Bottom logs console stream
-        Card(
-            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-            border = BorderStroke(1.dp, BorderColor),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+        // Bottom events console stream
+        if (showLogsStream) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = AccentGold, modifier = Modifier.size(16.dp))
-                        Text(
-                            text = "سوابق وقایع دیشب و امروز 📊",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Row {
-                        IconButton(onClick = onClearLogs, modifier = Modifier.size(24.dp)) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "حذف لاگ", tint = Color.Gray, modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(onClick = { showLogsStream = !showLogsStream }, modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                imageVector = if (showLogsStream) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = Color.LightGray,
-                                modifier = Modifier.size(18.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = AccentGold, modifier = Modifier.size(14.dp))
+                            Text(
+                                text = "سوابق وقایع دیشب و امروز 📊",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 10.sp
                             )
                         }
-                    }
-                }
 
-                if (showLogsStream) {
+                        IconButton(onClick = onClearLogs, modifier = Modifier.size(20.dp)) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = "حذف لاگ", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
-                    Box(modifier = Modifier.height(80.dp)) {
+                    Box(modifier = Modifier.height(60.dp)) {
                         if (logs.isEmpty()) {
                             Text(
                                 text = "هیچ واقعه‌ای ثبت نشده است.",
                                 color = Color.Gray,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 modifier = Modifier.align(Alignment.Center)
                             )
                         } else {
@@ -4929,18 +5021,19 @@ fun PlayStageContent(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 2.dp),
+                                            .padding(vertical = 1.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
                                             text = log.message,
                                             color = Color.White.copy(alpha = 0.85f),
-                                            fontSize = 11.sp
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.weight(1f)
                                         )
                                         Text(
                                             text = if (log.phase == "Night") "شب 🌙" else "روز ☀️",
                                             color = Color.Gray,
-                                            fontSize = 9.sp
+                                            fontSize = 8.sp
                                         )
                                     }
                                 }
@@ -4953,7 +5046,6 @@ fun PlayStageContent(
 
         // --- 1. Day Phase Last Move Drawer & Game Over Triggers ---
         if (phase == "Day") {
-            // Compact, highly professional Day Timer Open Button
             Button(
                 onClick = { onShowTimerModalChange(true) },
                 colors = ButtonDefaults.buttonColors(
@@ -4963,7 +5055,6 @@ fun PlayStageContent(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
                     .height(44.dp),
                 border = BorderStroke(1.dp, if (timerIsRunning) AccentGold else BorderColor)
             ) {
@@ -4975,9 +5066,9 @@ fun PlayStageContent(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 
-                val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
+                val timerFormatted = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
                 val buttonText = if (timerIsRunning) {
-                    "⏱️ تایمر روز فعال: $formattedTime (تنظیم یا مکث ⏳)"
+                    "⏱️ تایمر روز فعال: $timerFormatted (تنظیم یا مکث ⏳)"
                 } else {
                     "⏱️ مدیریت و شروع تایمر سخنرانی روز (${timerSelectedTime / 60} دقیقه) ⏱️"
                 }
@@ -5000,7 +5091,7 @@ fun PlayStageContent(
                 ) {
                     Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("قرعه‌کشی کارت حرکت پایانی 🎲", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text("کارت وصیت 🎲", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
 
                 Button(
@@ -5011,7 +5102,198 @@ fun PlayStageContent(
                 ) {
                     Icon(imageVector = Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("اعلام اتمام بازی 🏁", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
+                    Text("اتمام بازی 🏁", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
+                }
+            }
+        }
+
+        // Step 4: Sticky Bottom Utility Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SurfaceDark, RoundedCornerShape(14.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
+                .padding(vertical = 8.dp, horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Notes Button
+            Column(
+                modifier = Modifier
+                    .clickable { showGlobalNotesDialog = true }
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "یادداشت",
+                    tint = AccentGold,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text("یادداشت", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // Announcements Button
+            Column(
+                modifier = Modifier
+                    .clickable {
+                        showLogsStream = !showLogsStream
+                    }
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = "اعلان",
+                    tint = PrimaryPurple,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text("اعلان عمومی", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // History Button
+            Column(
+                modifier = Modifier
+                    .clickable { showLocalHistoryDialog = true }
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "تاریخچه",
+                    tint = AccentCitizen,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text("تاریخچه", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
+    // --- Interactive overlay Dialogs for Note and History ---
+    if (showGlobalNotesDialog) {
+        Dialog(onDismissRequest = { showGlobalNotesDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "📝 یادداشت‌های ویژه گاد (راوی)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    OutlinedTextField(
+                        value = globalNotesText,
+                        onValueChange = { globalNotesText = it },
+                        placeholder = { Text("هر یادداشتی مایلید اینجا ثبت کنید (مثلاً: استعلام‌های دیشب، شماره بازیکنان مشکوک و...)", fontSize = 11.sp, color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().height(140.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = PrimaryPurple,
+                            unfocusedBorderColor = BorderColor
+                        )
+                    )
+                    Button(
+                        onClick = { showGlobalNotesDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Text("تایید و بستن", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLocalHistoryDialog) {
+        Dialog(onDismissRequest = { showLocalHistoryDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "📜 تاریخچه استعلام‌ها و وقایع بازی",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        IconButton(onClick = { showLocalHistoryDialog = false }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "بستن", tint = Color.Gray)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderColor.copy(alpha = 0.4f))
+
+                    if (logs.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("هیچ واقعه‌ای ثبت نشده است.", color = Color.Gray, fontSize = 11.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.height(260.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(logs) { log ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF141324), RoundedCornerShape(8.dp))
+                                        .border(1.dp, BorderColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = log.message,
+                                        color = Color.White.copy(alpha = 0.9f),
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = if (log.phase == "Night") "شب 🌙" else "روز ☀️",
+                                        color = if (log.phase == "Night") PrimaryPurple else AccentGold,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { showLocalHistoryDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Text("بستن", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -5179,116 +5461,117 @@ fun PlayStageContent(
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                 border = BorderStroke(1.dp, BorderColor),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth(0.92f).padding(16.dp)
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .padding(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "گزارش وقایع شب 🌙",
-                        fontWeight = FontWeight.Bold,
-                        color = AccentGold,
-                        fontSize = 16.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    // Title Header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(text = "🌙", fontSize = 20.sp)
+                        Text(
+                            text = "گزارش صبحگاهی وقایع شب",
+                            fontWeight = FontWeight.Bold,
+                            color = AccentGold,
+                            fontSize = 16.sp
+                        )
+                    }
 
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2F)),
-                        border = BorderStroke(1.dp, BorderColor),
+                    HorizontalDivider(color = BorderColor.copy(alpha = 0.5f))
+
+                    // Column of Cards
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                text = "کشته های دیشب : $listShotNames",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text(
-                                text = "سلاخی ها : $listSlaughterNames",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text(
-                                text = "ساکت شده/بلاک شده : $listBlockedNames",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text(
-                                text = "مافیای شناخته شده توسط همشهری کین : $listRevealedNames",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text(
-                                text = "زنده شده دیشب : $listRevivedNames",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    if (isGravedigActive) {
-                        val deadRoles = remember(players) {
-                            players.filter { it.isSelected && !it.isAlive }.mapNotNull { it.assignedRoleName }.distinct()
-                        }
-                        val deadRolesText = if (deadRoles.isEmpty()) "هیچ نقشی هنوز خارج نشده است" else deadRoles.joinToString("، ")
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF331D2D)),
-                            border = BorderStroke(1.dp, Color(0xFFE040FB)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text("🪦", fontSize = 16.sp)
-                                    Text(
-                                        text = "گورکن نبش قبر کرد!",
-                                        color = Color(0xFFE040FB),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
+                        // 1. Deaths Card (Skull)
+                        val deathsContent = if (shotDeadPlayers.isEmpty() && slaughteredPlayers.isEmpty()) {
+                            "شب آرامی سپری شد و هیچ کشته‌ای ثبت نگردید. 🕊"
+                        } else {
+                            buildString {
+                                if (shotDeadPlayers.isNotEmpty()) {
+                                    append("شلیک دیشب: $listShotNames")
                                 }
-                                Text(
-                                    text = "نقش‌های خارج‌شده از بازی تا این لحظه:",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                                Text(
-                                    text = deadRolesText,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                if (slaughteredPlayers.isNotEmpty()) {
+                                    if (length > 0) append("\n")
+                                    append("سلاخی شبانه: $listSlaughterNames")
+                                }
                             }
                         }
+                        EventSummaryCard(
+                            title = "کشته‌شدگان شب",
+                            content = deathsContent,
+                            icon = "💀",
+                            accentColor = Color(0xFFFF5252),
+                            bgColor = Color(0xFF281516)
+                        )
+
+                        // 2. Muted/Blocked Card (Mute)
+                        val silenceContent = if (blockedPlayers.isEmpty()) {
+                            "هیچ بازیکنی سکوت یا محدودیت بلاک دریافت نکرد."
+                        } else {
+                            "ساکت‌شده یا مسدودشده: $listBlockedNames"
+                        }
+                        EventSummaryCard(
+                            title = "ساکت‌شدگان و بلاک‌شدگان",
+                            content = silenceContent,
+                            icon = "🔇",
+                            accentColor = Color(0xFFFF9800),
+                            bgColor = Color(0xFF281E15)
+                        )
+
+                        // 3. Revealed Mafia (if any)
+                        if (revealedMafiaPlayers.isNotEmpty()) {
+                            EventSummaryCard(
+                                title = "مافیای افشا شده (توسط کین)",
+                                content = listRevealedNames,
+                                icon = "🔍",
+                                accentColor = Color(0xFFFFD700),
+                                bgColor = Color(0xFF282515)
+                            )
+                        }
+
+                        // 4. Revived/Saved Players (if any)
+                        if (revivedPlayers.isNotEmpty()) {
+                            EventSummaryCard(
+                                title = "احیا شده در شب",
+                                content = listRevivedNames,
+                                icon = "💖",
+                                accentColor = Color(0xFF4CAF50),
+                                bgColor = Color(0xFF142418)
+                            )
+                        }
+
+                        // 5. Gravedigger (if active)
+                        if (isGravedigActive) {
+                            val deadRoles = remember(players) {
+                                players.filter { it.isSelected && !it.isAlive }.mapNotNull { it.assignedRoleName }.distinct()
+                            }
+                            val deadRolesText = if (deadRoles.isEmpty()) "هیچ نقشی هنوز خارج نشده است" else deadRoles.joinToString("، ")
+                            
+                            EventSummaryCard(
+                                title = "نبش قبر گورکن",
+                                content = "نقش‌های خارج‌شده از بازی تا این لحظه: $deadRolesText",
+                                icon = "🪦",
+                                accentColor = Color(0xFFE040FB),
+                                bgColor = Color(0xFF1E102E)
+                            )
+                        }
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Step 3: Glowing Purple Button
                     Button(
                         onClick = {
                             showNewNightSummaryDialog = false
@@ -5297,15 +5580,37 @@ fun PlayStageContent(
                                 viewModel.setGravedigActive(false)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGold, contentColor = BackgroundDark),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF7B2CBF),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .shadow(
+                                elevation = 8.dp,
+                                shape = RoundedCornerShape(14.dp),
+                                ambientColor = Color(0xFF7B2CBF),
+                                spotColor = Color(0xFF7B2CBF)
+                            )
+                            .border(1.dp, Color(0xFF9D4EDD), RoundedCornerShape(14.dp))
                     ) {
-                        Text(
-                            text = "تایید وقایع فاز شب",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ادامه به فاز روز ☀️",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowForward,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -8322,13 +8627,10 @@ fun PlayerSettingsDialog(
     }
 
     showGeneralResultDialog?.let { message ->
-        StyledConfirmationDialog(
-            title = "نتیجه تشخیص هویت ژنرال 🌊",
+        InquiryResultDialog(
+            title = "نتیجه اتفاق 🔍",
             message = message,
-            onConfirm = {
-                showGeneralResultDialog = null
-                handleDismiss()
-            },
+            players = players,
             onDismiss = {
                 showGeneralResultDialog = null
                 handleDismiss()
@@ -11359,6 +11661,225 @@ fun HomeScreen(
             containerColor = SurfaceDark,
             modifier = Modifier.padding(16.dp)
         )
+    }
+}
+
+@Composable
+fun EventSummaryCard(
+    title: String,
+    content: String,
+    icon: String,
+    accentColor: Color,
+    bgColor: Color
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = accentColor.copy(alpha = 0.2f),
+                spotColor = accentColor.copy(alpha = 0.2f)
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Icon section
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(accentColor.copy(alpha = 0.15f), CircleShape)
+                    .border(1.dp, accentColor.copy(alpha = 0.3f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = icon, fontSize = 22.sp)
+            }
+
+            // Text section
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = title,
+                    color = accentColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = content,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun InquiryResultDialog(
+    title: String,
+    message: String,
+    players: List<PlayerEntity>,
+    onDismiss: () -> Unit
+) {
+    val targetPlayer = remember(message, players) {
+        players.firstOrNull { player -> message.contains(player.name) }
+    }
+    
+    val isMafia = remember(message) {
+        message.contains("مافیا") || message.contains("کشته") || message.contains("سلاخی") || message.contains("حذف")
+    }
+    val isCitizen = remember(message) {
+        message.contains("شهروند") || message.contains("امن") || message.contains("مستقل") || message.contains("زنده") || message.contains("نجات")
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF131324)),
+            border = BorderStroke(2.dp, if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844)),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .padding(16.dp)
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    ambientColor = if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844),
+                    spotColor = if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844)
+                )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header Label Tag
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFF1F1F35), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "🔍 نتیجه اتفاق (Result)",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Centered Circular Avatar Layout
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                ) {
+                    // Main Avatar Circle
+                    Box(
+                        modifier = Modifier
+                            .size(110.dp)
+                            .background(
+                                color = if (isMafia) Color(0xFF331619) else if (isCitizen) Color(0xFF14301B) else Color(0xFF2C2C3F),
+                                shape = CircleShape
+                            )
+                            .border(
+                                width = 3.dp,
+                                color = if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844),
+                                shape = CircleShape
+                            )
+                            .shadow(
+                                elevation = 6.dp,
+                                shape = CircleShape,
+                                clip = false
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = targetPlayer?.name?.firstOrNull()?.toString() ?: "👤",
+                            color = Color.White,
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            ),
+                            fontSize = 32.sp
+                        )
+                    }
+
+                    // Bright badge overlay
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(36.dp)
+                            .background(
+                                color = if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844),
+                                shape = CircleShape
+                            )
+                            .border(2.dp, Color(0xFF131324), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isMafia) Icons.Default.Warning else if (isCitizen) Icons.Default.CheckCircle else Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Informative bold text
+                Text(
+                    text = message,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 24.sp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (targetPlayer != null) {
+                    Text(
+                        text = "نقش انتسابی: ${targetPlayer.assignedRoleName ?: "نامشخص"} | وضعیت: ${if (targetPlayer.isAlive) "زنده 🗣️" else "حذف‌شده 💀"}",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Bottom confirming action button
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isMafia) Color(0xFFFF5252) else if (isCitizen) Color(0xFF38BDF8) else Color(0xFFF6C844),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = "تایید و بازگشت",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
     }
 }
 

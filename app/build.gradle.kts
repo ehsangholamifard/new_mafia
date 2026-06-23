@@ -80,3 +80,129 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
+
+tasks.register("gitDiff") {
+    doLast {
+        val file = file("src/main/java/com/example/ui/screens/MainGameScreen.kt")
+        val content = file.readLines()
+        val stack = mutableListOf<Pair<Int, String>>()
+        var inString = false
+        var escaped = false
+        var inBlockComment = false
+        for ((lineIdx, lineText) in content.withIndex()) {
+            val lineNum = lineIdx + 1
+            var colIdx = 0
+            var inLineComment = false
+            while (colIdx < lineText.length) {
+                val char = lineText[colIdx]
+                if (escaped) {
+                    escaped = false
+                    colIdx++
+                    continue
+                }
+                if (char == '\\') {
+                    escaped = true
+                    colIdx++
+                    continue
+                }
+                if (inBlockComment) {
+                    if (char == '*' && colIdx + 1 < lineText.length && lineText[colIdx + 1] == '/') {
+                        inBlockComment = false
+                        colIdx += 2
+                    } else {
+                        colIdx++
+                    }
+                    continue
+                }
+                if (inLineComment) {
+                    break
+                }
+                if (char == '/' && colIdx + 1 < lineText.length && lineText[colIdx + 1] == '*') {
+                    inBlockComment = true
+                    colIdx += 2
+                    continue
+                }
+                if (char == '/' && colIdx + 1 < lineText.length && lineText[colIdx + 1] == '/') {
+                    inLineComment = true
+                    break
+                }
+                if (char == '"') {
+                    inString = !inString
+                    colIdx++
+                    continue
+                }
+                if (!inString) {
+                    if (char == '{') {
+                        stack.add(Pair(lineNum, lineText.trim()))
+                    } else if (char == '}') {
+                        if (stack.isNotEmpty()) {
+                            stack.removeAt(stack.size - 1)
+                        } else {
+                            println("Unmatched closing brace at line $lineNum: ${lineText.trim()}")
+                        }
+                    }
+                }
+                colIdx++
+            }
+        }
+        println("UNCLOSED_BRACES_COUNT: ${stack.size}")
+        println("TOP_UNCLOSED_BRACES (oldest to newest):")
+        for (i in 0 until Math.min(25, stack.size)) {
+            val item = stack[i]
+            println("Line ${item.first}: ${item.second}")
+        }
+        println("LATEST_UNCLOSED_BRACES (newest to oldest):")
+        for (i in stack.size - 1 downTo Math.max(0, stack.size - 25)) {
+            val item = stack[i]
+            println("Line ${item.first}: ${item.second}")
+        }
+    }
+}
+
+tasks.register("applyFix") {
+    doLast {
+        val file = file("src/main/java/com/example/ui/screens/MainGameScreen.kt")
+        val lines = file.readLines().toMutableList()
+        var targetLineIdx = -1
+        for ((idx, line) in lines.withIndex()) {
+            if (line.contains("gunAlertMessage!!") && line.contains("AccentGold") && line.contains("fontSize = 11.sp")) {
+                targetLineIdx = idx
+                break
+            }
+        }
+        if (targetLineIdx != -1) {
+            println("Found target at line ${targetLineIdx + 1}")
+            for (offset in 1..10) {
+                if (targetLineIdx + offset < lines.size) {
+                    println("Offset $offset: '${lines[targetLineIdx + offset].trim()}'")
+                }
+            }
+            
+            // Insert 3 closing braces right after the '}' of the 'else' block (which is targetLineIdx + 5)
+            lines.add(targetLineIdx + 6, "                  }")
+            lines.add(targetLineIdx + 7, "              }")
+            lines.add(targetLineIdx + 8, "          }")
+            file.writeText(lines.joinToString("\n"))
+            println("Applied fix successfully!")
+        } else {
+            println("Error: Target line not found!")
+        }
+    }
+}
+
+tasks.register("gitStatus") {
+    doLast {
+        val process = ProcessBuilder("git", "status").start()
+        println(process.inputStream.bufferedReader().readText())
+        println(process.errorStream.bufferedReader().readText())
+    }
+}
+
+tasks.register("gitDiffReal") {
+    doLast {
+        val process = ProcessBuilder("git", "diff").start()
+        println(process.inputStream.bufferedReader().readText())
+        println(process.errorStream.bufferedReader().readText())
+    }
+}
+
