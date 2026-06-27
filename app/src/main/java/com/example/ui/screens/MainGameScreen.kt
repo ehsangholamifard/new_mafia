@@ -1436,7 +1436,7 @@ fun SetupStageContent(
                         "کارآگاه 🔍", "دکتر 🩺", "حرفه‌ای 🔫", "تفنگدار 🪖", "زره‌پوش 🛡️", "جان‌سخت 💪",
                         "اوشن - ژنرال 🌊", "کنستانتین ⚡", "همشهری کین 📰", "کشیش ⛪", "شهروند ساده 🕊️",
                         "رئیس مافیا (پدرخوانده) 👑", "دکتر لکتور 💊", "خریدار (مذاکره کننده) 🤝", "تروریست 💣",
-                        "مافیای ساده 👤", "ماتادور 🧣", "روانپزشک 🧠", "هکر 📡", "ساقی 🍷", "گورکن 🪦",
+                        "مافیای ساده 👤", "ماتادور 🧣", "هکر 📡", "ساقی 🍷", "گورکن 🪦",
                         "ناتو 🎯", "خرابکار 🔫"
                     )
                     !defaultRoleNames.contains(role.name) && !defaultRoleNames.contains(role.name.trim())
@@ -3469,178 +3469,7 @@ fun PlayStageContent(
                                 }
                             }
 
-                            "SILENCE" -> {
-                                val alivePlayersExceptSelfBySilence = remember(players) {
-                                    players.filter { it.isSelected && it.isAlive && it.id != currentItem.player.id }
-                                }
-                                var silenceTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
-                                var silenceAlertMessage by remember { mutableStateOf<String?>(null) }
 
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFF13131F), RoundedCornerShape(12.dp))
-                                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Text(
-                                        text = "مدیریت سکوت / سایلنت (روانپزشک) 🧠",
-                                        fontWeight = FontWeight.Bold,
-                                        color = AccentGold,
-                                        fontSize = 12.sp
-                                    )
-
-                                    val silenceCap = caps.find { it.name.contains("سکوت") || it.name.contains("سایلنت") || it.name.contains("psychiatrist") }
-                                    if (silenceCap != null) {
-                                        Text(
-                                            text = "🧠 تعداد سکوت‌های باقی‌مانده: ${silenceCap.remainingCount} از ${silenceCap.totalCount}",
-                                            color = AccentGold,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-
-                                    val selectedTarget = alivePlayersExceptSelfBySilence.find { it.id == silenceTargetId }
-
-                                    // Target Selection Grid (LazyVerticalGrid)
-                                    LazyVerticalGrid(
-                                        columns = GridCells.Fixed(3),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 400.dp),
-                                        contentPadding = PaddingValues(vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        items(alivePlayersExceptSelfBySilence) { p ->
-                                            val isSelected = selectedTarget == p
-                                            val playerNumber = players.indexOf(p) + 1
-                                            val avatarBg = when (p.assignedRoleTeam) {
-                                                "Mafia" -> Color(0xFF261212)
-                                                "Citizen" -> Color(0xFF102114)
-                                                "Independent" -> Color(0xFF2B250E)
-                                                else -> Color(0xFF0F0F1A)
-                                            }
-                                            val emoji = when (p.assignedRoleTeam) {
-                                                "Mafia" -> "🕶️"
-                                                "Citizen" -> "🕊️"
-                                                else -> "🎭"
-                                            }
-
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier
-                                                    .clickable {
-                                                        silenceTargetId = if (isSelected) null else p.id
-                                                    }
-                                                    .padding(6.dp)
-                                            ) {
-                                                // Large circular Avatar
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(64.dp)
-                                                        .background(avatarBg, CircleShape)
-                                                        .border(
-                                                            if (isSelected) BorderStroke(4.dp, PrimaryPurple)
-                                                            else BorderStroke(1.5.dp, Color.Transparent),
-                                                            CircleShape
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(emoji, fontSize = 24.sp)
-                                                }
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                // Player Name explicitly rendered below the avatar in TextWhite (e.g., 14.sp)
-                                                Text(
-                                                    text = p.name,
-                                                    color = Color.White,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                // The Player Number
-                                                Text(
-                                                    text = "بازیکن $playerNumber",
-                                                    color = Color.LightGray,
-                                                    fontSize = 11.sp,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    val hasRemainingSilences = silenceCap == null || silenceCap.remainingCount > 0
-                                    val isSilenceAllowed = !currentItem.player.isBlocked && !currentItem.player.isBlockedThisNight
-                                    val isActionEnabled = silenceTargetId != null && isSilenceAllowed && hasRemainingSilences
-
-                                    // Action Button matching the dark purple theme
-                                    Button(
-                                        onClick = {
-                                            val targetId = silenceTargetId
-                                            if (targetId != null) {
-                                                val target = alivePlayersExceptSelfBySilence.find { it.id == targetId }
-                                                if (target != null) {
-                                                    triggerConfirmation(
-                                                        "تایید سکوت بازیکن 🧠",
-                                                        "آیا مطمئن هستید که می‌خواهید بازیکن «${target.name}» را امشب سایلنت کنید؟"
-                                                    ) {
-                                                        viewModel.silencePlayer(currentItem.player.id, target.id)
-                                                        silenceAlertMessage = "بازیکن «${target.name}» با موفقیت برای فاز روز بعدی در حالت سکوت قرار گرفت."
-                                                        silenceTargetId = null
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        enabled = isActionEnabled,
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = PrimaryPurple,
-                                            contentColor = Color.White,
-                                            disabledContainerColor = PrimaryPurple.copy(alpha = 0.2f),
-                                            disabledContentColor = Color.Gray
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("psychiatrist_silence_confirm_button"),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text(
-                                            text = "ثبت و اعمال حرکت شب",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = if (isActionEnabled) Color.White else Color.Gray
-                                        )
-                                    }
-                                }
-
-                                silenceAlertMessage?.let { msg ->
-                                    StyledConfirmationDialog(
-                                        title = "گزارش سایلنت 🧠",
-                                        message = msg,
-                                        onConfirm = {
-                                            silenceAlertMessage = null
-                                            if (currentNightQueueIndex < nightQueue.size - 1) {
-                                                currentNightQueueIndex += 1
-                                            } else {
-                                                showNewNightSummaryDialog = true
-                                            }
-                                        },
-                                        onDismiss = {
-                                            silenceAlertMessage = null
-                                            if (currentNightQueueIndex < nightQueue.size - 1) {
-                                                currentNightQueueIndex += 1
-                                            } else {
-                                                showNewNightSummaryDialog = true
-                                            }
-                                        }
-                                    )
-                                }
-
-                             }
 
                              "UNSILENCE" -> {
                                 val alivePlayersExceptSelfByUnsilence = remember(players) {
@@ -10789,7 +10618,7 @@ fun NatoGuessActionContent(
     
     val citizenRoles = remember {
         listOf(
-            "پزشک", "دکتر", "کشیش", "روانپزشک", "هکر", "گورکن", "فرمانده", "کارآگاه", 
+            "پزشک", "دکتر", "کشیش", "هکر", "گورکن", "فرمانده", "کارآگاه", 
             "حرفه‌ای", "تفنگدار", "زره‌پوش", "جان‌سخت", "اوشن - ژنرال", "کنستانتین", 
             "همشهری کین", "شهروند ساده"
         )
@@ -12140,6 +11969,64 @@ fun InquiryResultDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PlayerNightGridItem(
+    player: PlayerEntity,
+    isSelected: Boolean,
+    onPlayerClick: () -> Unit,
+    playerNumber: Int
+) {
+    val avatarBg = when (player.assignedRoleTeam) {
+        "Mafia" -> Color(0xFF261212)
+        "Citizen" -> Color(0xFF102114)
+        "Independent" -> Color(0xFF2B250E)
+        else -> Color(0xFF0F0F1A)
+    }
+    val emoji = when (player.assignedRoleTeam) {
+        "Mafia" -> "🕶️"
+        "Citizen" -> "🕊️"
+        else -> "🎭"
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable { onPlayerClick() }
+            .padding(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(avatarBg, CircleShape)
+                .border(
+                    if (isSelected) BorderStroke(3.dp, PrimaryPurple)
+                    else BorderStroke(1.5.dp, Color.Transparent),
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(emoji, fontSize = 20.sp)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = player.name,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "بازیکن $playerNumber",
+            color = Color.LightGray,
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

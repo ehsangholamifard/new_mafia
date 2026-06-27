@@ -1063,63 +1063,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun silencePlayer(psychiatristId: Int, targetId: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val psych = repository.getPlayerById(psychiatristId) ?: return@launch
-            val target = checkAndTransformMajhool(psychiatristId, targetId)
 
-            if (target.isInsuredThisNight) {
-                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت روانپزشک «${psych.name}» روی او خنثی شد.")
-                return@launch
-            }
-
-            if (psych.isBlockedThisNight) {
-                repository.addLog("⚠️ خطا: قابلیت روانپزشک «${psych.name}» امشب توسط ماتادور بسته شده است.")
-                return@launch
-            }
-
-            // Check remaining capability count first
-            if (psych.capabilitiesJson.isNotBlank()) {
-                try {
-                    val caps = Json.decodeFromString<List<RoleCapability>>(psych.capabilitiesJson)
-                    val silenceCap = caps.find { it.name.contains("سکوت") || it.name.contains("سایلنت") || it.name.contains("psychiatrist") }
-                    if (silenceCap != null && silenceCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: روانپزشک دیگر سهمیه سکوت باقی‌مانده ندارد.")
-                        return@launch
-                    }
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-
-            // Decrement capability count
-            if (psych.capabilitiesJson.isNotBlank()) {
-                try {
-                    val caps = Json.decodeFromString<List<RoleCapability>>(psych.capabilitiesJson)
-                    val updatedCaps = caps.map { cap ->
-                        if ((cap.name.contains("سکوت") || cap.name.contains("سایلنت") || cap.name.contains("psychiatrist")) && cap.remainingCount > 0) {
-                            cap.copy(remainingCount = cap.remainingCount - 1)
-                        } else cap
-                    }
-                    val updatedJson = Json.encodeToString(updatedCaps)
-                    val updatedPsych = psych.copy(capabilitiesJson = updatedJson)
-                    repository.updatePlayer(updatedPsych)
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-
-            // Mark target player as silenced
-            val updatedTarget = target.copy(isSilencedThisRound = true)
-            repository.updatePlayer(updatedTarget)
-            repository.addLog("🧠 روانپزشک «${psych.name}» بازیکن «${target.name}» (${target.assignedRoleName ?: "بدون نقش"}) را امشب ساکت (سایلنت) کرد.")
-
-            // Refresh selected player settings
-            if (_selectedPlayerForSettings.value?.id == psychiatristId) {
-                _selectedPlayerForSettings.value = repository.getPlayerById(psychiatristId)
-            }
-        }
-    }
 
     fun unsilencePlayer(priestId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {

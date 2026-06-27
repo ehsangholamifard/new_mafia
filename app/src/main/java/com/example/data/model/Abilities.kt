@@ -83,13 +83,7 @@ val ABILITY_REGISTRY = mapOf(
         nightPriority = 75,
         actionType = "TARGET_ONE_DEAD"
     ),
-    "SILENCE" to Ability(
-        id = "SILENCE",
-        name = "سکوت / سایلنت (روانپزشک)",
-        description = "روانپزشک میتواند به انتخاب خودش، مافیا یا هر کسی که دارد به روند بازی لطمه میزند را ساکت کند.",
-        nightPriority = 19,
-        actionType = "TARGET_ONE_ALIVE"
-    ),
+
     "UNSILENCE" to Ability(
         id = "UNSILENCE",
         name = "رفع سکوت (کشیش)",
@@ -158,7 +152,7 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("بیمه") || normalized.contains("insurer") || normalized.contains("insurance") || normalized.contains("insure") -> listOf("INSURE")
         normalized.contains("سلاخ") || normalized.contains("slaughter") -> listOf("SLAUGHTER")
         normalized.contains("ماتادور") || normalized.contains("matador") -> listOf("BLOCK")
-        normalized.contains("روانپزشک") || normalized.contains("psychiatrist") || normalized.contains("silence") || normalized.contains("silent") -> listOf("SILENCE")
+
         normalized.contains("ساقی") || normalized.contains("sagi") || normalized.contains("intoxicate") -> listOf("INTOXICATE")
         normalized.contains("گورکن") || normalized.contains("gravedigger") || normalized.contains("gravedig") -> listOf("GRAVEDIG")
         normalized.contains("تروریست") || normalized.contains("terrorist") || normalized.contains("terror") -> listOf("TERROR")

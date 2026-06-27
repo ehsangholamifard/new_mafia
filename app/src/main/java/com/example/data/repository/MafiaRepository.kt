@@ -142,13 +142,7 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     team = "Mafia",
                     capabilitiesJson = """[{"name":"مسدود کردن نقش 🧣","totalCount":10,"remainingCount":10}]"""
                 ),
-                RoleEntity(
-                    name = "روانپزشک 🧠",
-                    description = "روانپزشک میتواند به انتخاب خودش، مافیا یا هر کسی که دارد به روند بازی لطمه میزند را ساکت کند.",
-                    team = "Citizen",
-                    capabilitiesJson = """[{"name":"سایلنت / سکوت 🧠","totalCount":10,"remainingCount":10}]""",
-                    abilitiesJson = """["SILENCE"]"""
-                ),
+
                 RoleEntity(
                     name = "هکر 📡",
                     description = "سه نفر را انتخاب میکند. اگر دقیقاً یک مافیا در بین آنها باشد، لیست خطرناک است. توجه: این قابلیت معمولاً فقط در شب دوم بازی استفاده می‌شود.",
