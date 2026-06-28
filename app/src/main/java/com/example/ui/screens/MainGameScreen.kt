@@ -12078,67 +12078,80 @@ fun HomeScreen(
     }
 
     if (showAboutDialog) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
-            title = {
-                Text(
-                    text = "درباره برنامه 🎭",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Right,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            text = {
+        Dialog(
+            onDismissRequest = { showAboutDialog = false }
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        text = "برنامه مدیریت بازی مافیا",
+                        text = "درباره اپلیکیشن مافیا گاد 🎭",
                         fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Divider(color = BorderColor, thickness = 1.dp)
+
+                    Text(
+                        text = "طراحی و توسعه توسط: احسان غلامی فرد",
                         color = AccentGold,
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Right,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "نسخه: 1.0.0",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Right,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "این برنامه ابزاری پیشرفته و کاربردی برای گردانندگان (مادریتورها) بازی جذاب مافیا است. با استفاده از این برنامه می‌توانید به راحتی نقش‌ها را بین بازیکنان توزیع کرده، رویدادهای فاز شب و روز را ثبت نموده و جریان بازی را بدون نقص هدایت کنید.",
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Right,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showAboutDialog = false },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentCrimson,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        text = "فهمیدم",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
                     )
+
+                    Text(
+                        text = "این اپلیکیشن جهت تسهیل مدیریت بازیهای مافیا طراحی شده است. از ویژگیهای آن میتوان به مدیریت پویای فاز شب، سیستم شلیک مستقیم تفنگدار، و ذخیرهسازی خودکار بازیهای ناتمام اشاره کرد.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 22.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "نسخه 1.2.0 (بهروزرسانی نهایی)",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { showAboutDialog = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryPurple,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text(
+                            text = "بستن راهنما",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
-            },
-            containerColor = SurfaceDark,
-            modifier = Modifier.padding(16.dp)
-        )
+            }
+        }
     }
 
     if (gameToDelete != null) {
