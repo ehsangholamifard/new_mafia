@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.items
@@ -153,10 +154,10 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         var showMatadorBlockedAlert by remember { mutableStateOf(false) }
 
         var showExitDialog by remember { mutableStateOf(false) }
-        BackHandler(enabled = true) {
+        BackHandler(enabled = currentScreen != AppScreen.HOME) {
             if (currentScreen == AppScreen.SETUP) {
                 currentScreen = AppScreen.HOME
-            } else {
+            } else if (currentScreen == AppScreen.GAME) {
                 showExitDialog = true
             }
         }
@@ -180,7 +181,19 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         when (currentScreen) {
             AppScreen.HOME -> {
                 HomeScreen(
-                    onStartNewGame = { currentScreen = AppScreen.SETUP },
+                    gameSessions = gameSessions,
+                    onStartNewGame = {
+                        viewModel.startNewGameSession()
+                        currentScreen = AppScreen.SETUP
+                    },
+                    onResumeGame = { sessionId ->
+                        viewModel.resumeGameSession(sessionId) {
+                            currentScreen = AppScreen.GAME
+                        }
+                    },
+                    onDeleteGameSession = { sessionId ->
+                        viewModel.deleteGameSessionById(sessionId)
+                    },
                     onShowHistory = {
                         Toast.makeText(context, "به زودی...", Toast.LENGTH_SHORT).show()
                     }
@@ -821,24 +834,30 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                 onDismissRequest = { showExitDialog = false },
                 title = {
                     Text(
-                        text = "خروج از برنامه",
+                        text = "توقف و ذخیره بازی",
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
-                        fontSize = 16.sp
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 },
                 text = {
                     Text(
-                        text = "آیا مطمئن هستید که میخواهید از برنامه خارج شوید؟ تمام اطلاعات بازی فعلی از بین خواهد رفت.",
+                        text = "آیا میخواهید بازی را متوقف کنید؟ بازی ذخیره شده و میتوانید بعداً آن را ادامه دهید.",
                         color = TextSecondary,
                         fontSize = 13.sp,
-                        lineHeight = 19.sp
+                        lineHeight = 19.sp,
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 },
                 confirmButton = {
                     Button(
                         onClick = {
-                            (context as? Activity)?.finish()
+                            viewModel.saveActiveGameSession("IN_PROGRESS")
+                            showExitDialog = false
+                            currentScreen = AppScreen.HOME
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentCrimson,
@@ -847,7 +866,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            text = "بله، خارج میشوم",
+                            text = "بله، ذخیره و خروج",
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         )
@@ -863,7 +882,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            text = "خیر، ادامه میدهم",
+                            text = "خیر، ادامه بازی",
                             fontWeight = FontWeight.Normal,
                             fontSize = 11.sp
                         )
@@ -5939,101 +5958,88 @@ fun PlayStageContent(
                     .padding(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "🏁 اعلام و ثبت پایان نهایی بازی سناریو",
+                        text = "🏁 پایان بازی",
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
-                        fontSize = 13.sp
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
                     )
 
-                    Text("ساید و جبهه برنده کل بازی را مشخص کنید:", color = TextSecondary, fontSize = 10.sp)
-
-                    // Winner Selection
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            "Citizen" to "شهروندان 🕊️",
-                            "Mafia" to "مافیا 🕶️",
-                            "Independent" to "مستقل 🎭"
-                        ).forEach { (teamVal, label) ->
-                            val isSel = winnerTeamSelection == teamVal
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(
-                                        color = if (isSel) Color(0xFF1E142F) else Color(0xFF13131F),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSel) AccentGold else BorderColor,
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable { winnerTeamSelection = teamVal }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSel) Color.White else Color.Gray
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = "کدام تیم برنده شد؟",
+                        color = TextWhite,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
+                    )
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Text("علت دقیق خاتمه بازی (وصیت، رای‌گیری، تسلیم گروه و غیره):", color = TextSecondary, fontSize = 10.sp)
-
-                    OutlinedTextField(
-                        value = gameOverReasonInput,
-                        onValueChange = { gameOverReasonInput = it },
-                        placeholder = { Text("مثال: تصاحب شب و برقراری برتری شمارش مافیا...", fontSize = 11.sp, color = Color.Gray) },
-                        maxLines = 2,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AccentGold,
-                            unfocusedBorderColor = BorderColor
+                    // Citizens Button (Green tint)
+                    Button(
+                        onClick = {
+                            onSaveGameOverReport("Citizen", "اتمام بازی - پیروزی تیم شهروند")
+                            showGameOverDialog = false
+                            onResetGame() // Go back to Home
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF10B981),
+                            contentColor = Color.White
                         ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                if (gameOverReasonInput.isNotBlank()) {
-                                    onSaveGameOverReport(winnerTeamSelection, gameOverReasonInput)
-                                    showGameOverDialog = false
-                                    onResetGame() // Go back to SETUP stage
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentCitizen, contentColor = BackgroundDark),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f),
-                            enabled = gameOverReasonInput.isNotBlank()
-                        ) {
-                            Text("ثبت و برگشت به خانه 💾", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        }
+                        Text("شهروند 🕊️", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
 
-                        Button(
-                            onClick = { showGameOverDialog = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(0.8f)
-                        ) {
-                            Text("انصراف", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        }
+                    // Mafia Button (Red tint)
+                    Button(
+                        onClick = {
+                            onSaveGameOverReport("Mafia", "اتمام بازی - پیروزی تیم مافیا")
+                            showGameOverDialog = false
+                            onResetGame() // Go back to Home
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFEF4444),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Text("مافیا 🕶️", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    // Independent Button (Yellow/Gold tint)
+                    Button(
+                        onClick = {
+                            onSaveGameOverReport("Independent", "اتمام بازی - پیروزی ساید مستقل")
+                            showGameOverDialog = false
+                            onResetGame() // Go back to Home
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF59E0B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Text("مستقل 🎭", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Cancel Button
+                    TextButton(
+                        onClick = { showGameOverDialog = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = TextGray),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("انصراف", fontWeight = FontWeight.Normal, fontSize = 13.sp)
                     }
                 }
             }
@@ -11721,7 +11727,8 @@ fun RevealActionContent(
 @Composable
 fun GameSessionCard(
     session: GameSessionEntity,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val formattedTime = remember(session.timestamp) {
         try {
@@ -11739,7 +11746,7 @@ fun GameSessionCard(
             0
         }
     }
-    val isFinished = session.status == "FINISHED"
+    val isFinished = session.status.startsWith("FINISHED")
     val statusText = if (isFinished) "پایان یافته" else "ناتمام"
     val statusColor = if (isFinished) Color(0xFF10B981) else Color(0xFFF59E0B)
     val statusBg = if (isFinished) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
@@ -11818,6 +11825,19 @@ fun GameSessionCard(
             tint = TextGray,
             modifier = Modifier.size(24.dp)
         )
+
+        // Delete IconButton
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "حذف بازی",
+                tint = Color(0xFFEF4444),
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -11826,11 +11846,14 @@ fun HomeScreen(
     gameSessions: List<GameSessionEntity>,
     onStartNewGame: () -> Unit,
     onResumeGame: (Int) -> Unit,
+    onDeleteGameSession: (Int) -> Unit,
     onShowHistory: () -> Unit
 ) {
     val context = LocalContext.current
     var showAboutDialog by remember { mutableStateOf(false) }
     var currentTab by remember { mutableStateOf("خانه") }
+    var gameToDelete by remember { mutableStateOf<GameSessionEntity?>(null) }
+    var selectedFinishedSessionForReport by remember { mutableStateOf<GameSessionEntity?>(null) }
 
     Scaffold(
         bottomBar = {
@@ -11893,170 +11916,165 @@ fun HomeScreen(
         containerColor = BackgroundDark,
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(BackgroundDark)
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
-                // Screen Header title (centered)
-                Text(
-                    text = "داشبورد اصلی",
-                    color = TextWhite,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center,
+            Spacer(modifier = Modifier.height(12.dp))
+            // Screen Header title (centered)
+            Text(
+                text = "داشبورد اصلی",
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+
+            // Welcome Card Area
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SurfaceDark)
+                    .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Crown emoji
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                )
+                        .size(48.dp)
+                        .background(Color(0xFF2E2E3E), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "👑",
+                        fontSize = 24.sp
+                    )
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "خوش آمدی، گرداننده",
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Start
+                    )
+                    Text(
+                        text = "بازی جدید بساز یا ادامه بده.",
+                        color = TextGray,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Start
+                    )
+                }
             }
 
-            item {
-                // Welcome Card Area
+            // Massive primary actions button switch to setup
+            Button(
+                onClick = onStartNewGame,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryPurple,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .testTag("start_new_game_button")
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(SurfaceDark)
-                        .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Crown emoji
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0xFF2E2E3E), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "👑",
-                            fontSize = 24.sp
-                        )
-                    }
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "خوش آمدی، گرداننده",
-                            color = TextWhite,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            textAlign = TextAlign.Start
-                        )
-                        Text(
-                            text = "بازی جدید بساز یا ادامه بده.",
-                            color = TextGray,
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Start
-                        )
-                    }
-                }
-            }
-
-            item {
-                // Massive primary actions button switch to setup
-                Button(
-                    onClick = onStartNewGame,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimaryPurple,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(60.dp)
-                        .testTag("start_new_game_button")
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "➕ ساخت بازی جدید",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // Recent Games Section
-            item {
-                Text(
-                    text = "بازی‌های اخیر",
-                    color = TextWhite,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp)
-                )
-            }
-
-            if (gameSessions.isEmpty()) {
-                item {
-                    Text(
-                        text = "هنوز بازی ثبت نشده است",
-                        color = TextGray,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                    )
-                }
-            } else {
-                items(gameSessions) { session ->
-                    GameSessionCard(
-                        session = session,
-                        onClick = {
-                            if (session.status == "IN_PROGRESS") {
-                                onResumeGame(session.id)
-                            } else {
-                                Toast.makeText(context, "این بازی به پایان رسیده است 🔚", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // About App Mini button
-                TextButton(
-                    onClick = { showAboutDialog = true },
-                    modifier = Modifier.testTag("about_app_text_button")
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "ℹ️ درباره برنامه و راهنما",
-                        color = TextGray,
-                        fontSize = 13.sp,
-                        textDecoration = TextDecoration.Underline,
+                        text = "➕ ساخت بازی جدید",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
                         textAlign = TextAlign.Center
                     )
                 }
             }
+
+            Text(
+                text = "بازی‌های اخیر",
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Start,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
+            )
+
+            // Recent Games List - scrollable internally
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (gameSessions.isEmpty()) {
+                    item {
+                        Text(
+                            text = "هنوز بازی ثبت نشده است",
+                            color = TextGray,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp)
+                        )
+                    }
+                } else {
+                    items(gameSessions) { session ->
+                        GameSessionCard(
+                            session = session,
+                            onClick = {
+                                if (session.status == "IN_PROGRESS") {
+                                    onResumeGame(session.id)
+                                } else {
+                                    selectedFinishedSessionForReport = session
+                                }
+                            },
+                            onDelete = {
+                                gameToDelete = session
+                            }
+                        )
+                    }
+                }
+            }
+
+            // About App Mini button (fixed at the bottom)
+            TextButton(
+                onClick = { showAboutDialog = true },
+                modifier = Modifier
+                    .testTag("about_app_text_button")
+                    .padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = "ℹ️ درباره برنامه و راهنما",
+                    color = TextGray,
+                    fontSize = 13.sp,
+                    textDecoration = TextDecoration.Underline,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
-    }
     }
 
     if (showAboutDialog) {
@@ -12120,6 +12138,77 @@ fun HomeScreen(
             },
             containerColor = SurfaceDark,
             modifier = Modifier.padding(16.dp)
+        )
+    }
+
+    if (gameToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { gameToDelete = null },
+            title = {
+                Text(
+                    text = "حذف بازی",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Right,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Text(
+                    text = "آیا از حذف این رکورد اطمینان دارید؟",
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    textAlign = TextAlign.Right,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        gameToDelete?.let { session ->
+                            onDeleteGameSession(session.id)
+                        }
+                        gameToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentCrimson,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "بله",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { gameToDelete = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextGray),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "خیر",
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 11.sp
+                    )
+                }
+            },
+            containerColor = SurfaceDark,
+            titleContentColor = Color.White,
+            textContentColor = TextSecondary,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (selectedFinishedSessionForReport != null) {
+        GameReportDialog(
+            session = selectedFinishedSessionForReport!!,
+            onDismiss = { selectedFinishedSessionForReport = null }
         )
     }
 }
@@ -12413,6 +12502,228 @@ fun StatusTag(text: String, icon: String, color: Color) {
     ) {
         Text(icon, fontSize = 9.sp)
         Text(text, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun GameReportDialog(
+    session: GameSessionEntity,
+    onDismiss: () -> Unit
+) {
+    val formattedTime = remember(session.timestamp) {
+        try {
+            val sdf = java.text.SimpleDateFormat("yyyy/MM/dd - HH:mm", java.util.Locale.getDefault())
+            sdf.format(java.util.Date(session.timestamp))
+        } catch (e: Exception) {
+            "نامشخص"
+        }
+    }
+
+    val players = remember(session.playersJson) {
+        try {
+            kotlinx.serialization.json.Json.decodeFromString<List<PlayerEntity>>(session.playersJson)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    val winnerSuffix = session.status.substringAfter("FINISHED_", "")
+    val winnerText = when (winnerSuffix) {
+        "Citizen" -> "تیم شهروند 🕊️"
+        "Mafia" -> "تیم مافیا 🕶️"
+        "Independent" -> "ساید مستقل 🎭"
+        else -> "نامشخص 🏁"
+    }
+
+    val winnerColor = when (winnerSuffix) {
+        "Citizen" -> Color(0xFF10B981)
+        "Mafia" -> Color(0xFFEF4444)
+        "Independent" -> Color(0xFFF59E0B)
+        else -> Color.Gray
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = BorderStroke(1.dp, BorderColor),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📋 گزارش جزئیات بازی",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "بستن", tint = Color.Gray)
+                    }
+                }
+
+                Divider(color = BorderColor, thickness = 1.dp)
+
+                // Date and Info
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "تاریخ برگزاری:",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                    Text(
+                        text = formattedTime,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Winner Section
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(winnerColor.copy(alpha = 0.15f))
+                        .border(1.dp, winnerColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "برنده نهایی بازی",
+                        color = TextGray,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = winnerText,
+                        color = winnerColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+
+                // Moderator Section
+                val moderator = if (session.moderatorName.isNotBlank()) session.moderatorName else "احسان غلامی فرد"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF252538))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "گرداننده بازی:",
+                        color = TextGray,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = moderator,
+                        color = AccentGold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+
+                // Player-Role List Section Title
+                Text(
+                    text = "نقش‌های بازیکنان:",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+
+                // Scrollable list of players and roles
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
+                        .background(Color(0xFF13131F))
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (players.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("اطلاعات بازیکنان در دسترس نیست.", color = TextGray, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        itemsIndexed(players) { index, player ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp, horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${index + 1}. ${player.name}",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = player.assignedRoleName ?: "نقش مشخص نشده",
+                                    color = when (player.assignedRoleTeam) {
+                                        "Mafia" -> Color(0xFFEF4444)
+                                        "Citizen" -> Color(0xFF10B981)
+                                        "Independent" -> Color(0xFFF59E0B)
+                                        else -> AccentGold
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (index < players.size - 1) {
+                                Divider(color = BorderColor.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                        }
+                    }
+                }
+
+                // Close Button
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text("بستن گزارش", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        }
     }
 }
 

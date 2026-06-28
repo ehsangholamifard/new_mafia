@@ -8,6 +8,7 @@ import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
 import com.example.data.model.GameHistoryEntity
+import com.example.data.model.GameSessionEntity
 import com.example.data.model.RoleCapability
 import com.example.data.repository.MafiaRepository
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     val gameLogs: StateFlow<List<GameLogEntity>>
     val gameHistory: StateFlow<List<GameHistoryEntity>>
     val gameSessions: StateFlow<List<GameSessionEntity>>
+
+    // Active game session ID (null/0 if new game)
+    private val _activeSessionId = MutableStateFlow<Int?>(null)
+    val activeSessionId: StateFlow<Int?> = _activeSessionId.asStateFlow()
 
     // Game state: "SETUP", "DISTRIBUTION", "PLAY"
     private val _gameStage = MutableStateFlow("SETUP")
@@ -774,8 +779,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertGameHistory(historyEntry)
 
             // Also save as FINISHED game session
+            val currentId = _activeSessionId.value ?: 0
             val sessionEntry = com.example.data.model.GameSessionEntity(
-                status = "FINISHED",
+                id = currentId,
+                status = "FINISHED_$winnerTeam",
                 moderatorName = _moderatorName.value,
                 gameStage = _gameStage.value,
                 gamePhase = _gamePhase.value,
@@ -986,8 +993,14 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             _gameStage.value = "SETUP"
             _gamePhase.value = "Night"
             _selectedPlayerForSettings.value = null
+            _activeSessionId.value = null
             repository.addLog("کل سوابق بازی بازنشانی شد و مجدداً به صفحه تنظیمات بازگشتیم 🔄")
         }
+    }
+
+    fun startNewGameSession() {
+        _activeSessionId.value = null
+        resetGame()
     }
 
     // --- Import / Export Configurations (JSON) ---
@@ -2473,7 +2486,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val rolesJson = Json.encodeToString(roles.value)
             val sagiPastTargetsJson = Json.encodeToString(sagiPastTargets.value)
 
+            val currentId = _activeSessionId.value ?: 0
             val session = com.example.data.model.GameSessionEntity(
+                id = currentId,
                 status = status,
                 moderatorName = _moderatorName.value,
                 gameStage = _gameStage.value,
@@ -2490,13 +2505,18 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 natoWrongGuessesCount = _natoWrongGuessesCount.value,
                 musketeerLiveGunExhausted = _musketeerLiveGunExhausted.value
             )
-            repository.insertGameSession(session)
+            val savedId = repository.insertGameSession(session)
+            if (currentId == 0) {
+                _activeSessionId.value = savedId.toInt()
+            }
         }
     }
 
     fun resumeGameSession(sessionId: Int, onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val session = repository.getGameSessionById(sessionId) ?: return@launch
+            
+            _activeSessionId.value = session.id
             
             // Restore VM memory states
             _gameStage.value = session.gameStage
@@ -2552,6 +2572,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) {
                 onComplete()
             }
+        }
+    }
+
+    fun deleteGameSessionById(sessionId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteGameSessionById(sessionId)
         }
     }
 }
