@@ -11,10 +11,11 @@ import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
 import com.example.data.model.GameHistoryEntity
+import com.example.data.model.GameSessionEntity
 
 @Database(
-    entities = [PlayerEntity::class, RoleEntity::class, GameLogEntity::class, GameHistoryEntity::class],
-    version = 14,
+    entities = [PlayerEntity::class, RoleEntity::class, GameLogEntity::class, GameHistoryEntity::class, GameSessionEntity::class],
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

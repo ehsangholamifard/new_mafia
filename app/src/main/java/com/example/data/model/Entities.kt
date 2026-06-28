@@ -36,6 +36,8 @@ data class PlayerEntity(
     val isRevivedThisNight: Boolean = false,
     val hasBlankGunThisRound: Boolean = false,
     val hasLiveGunThisRound: Boolean = false,
+    val hasBlankGun: Boolean = false,
+    val hasCombatGun: Boolean = false,
     val usedLiveGun: Boolean = false,
     val isSilencedThisRound: Boolean = false,
     val isSabotaged: Boolean = false,
@@ -76,6 +78,28 @@ data class GameHistoryEntity(
     val playersJson: String, // Serialize the final state of players
     val logsJson: String, // Serialize the final list of logs
     val moderatorName: String = ""
+)
+
+@Entity(tableName = "game_sessions")
+@Serializable
+data class GameSessionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val status: String = "IN_PROGRESS", // "IN_PROGRESS" or "FINISHED"
+    val moderatorName: String = "",
+    val gameStage: String = "PLAY",
+    val gamePhase: String = "Day",
+    val playersJson: String,
+    val logsJson: String,
+    val rolesJson: String = "",
+    val remainingInquiries: Int = 3,
+    val totalInquiries: Int = 3,
+    val sagiCooldownNight: Int = 0,
+    val churchillLastShotNight: Int = 0,
+    val sagiPastTargetsJson: String = "[]",
+    val isGravedigActiveThisNight: Boolean = false,
+    val natoWrongGuessesCount: Int = 0,
+    val musketeerLiveGunExhausted: Boolean = false
 )
 
 @Serializable

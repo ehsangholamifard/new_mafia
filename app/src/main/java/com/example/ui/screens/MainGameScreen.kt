@@ -62,6 +62,7 @@ import com.example.data.viewmodel.LastMoveCard
 import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
+import com.example.data.model.GameSessionEntity
 import com.example.data.model.RoleCapability
 import com.example.data.model.getRoleAbilities
 import com.example.data.viewmodel.MafiaViewModel
@@ -108,6 +109,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val musketeerLiveGunExhausted by viewModel.musketeerLiveGunExhausted.collectAsStateWithLifecycle()
         val sagiCooldownNight by viewModel.sagiCooldownNight.collectAsStateWithLifecycle()
         val sagiPastTargets by viewModel.sagiPastTargets.collectAsStateWithLifecycle()
+        val gameSessions by viewModel.gameSessions.collectAsStateWithLifecycle()
 
         var currentScreen by remember {
             mutableStateOf(
@@ -525,7 +527,10 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         onGiveGun = { musketeerId, targetId, isLive ->
                             viewModel.giveMusketeerGun(musketeerId, targetId, isLive)
                         },
-                        musketeerLiveGunExhausted = musketeerLiveGunExhausted
+                        musketeerLiveGunExhausted = musketeerLiveGunExhausted,
+                        onDirectCombatShot = { shooterId, targetId ->
+                            viewModel.executeDirectCombatShot(shooterId, targetId)
+                        }
                     )
                 }
 
@@ -2413,125 +2418,118 @@ fun PlayStageContent(
     var currentNightQueueIndex by remember(phase) { mutableStateOf(0) }
     var playStageAlertMessage by remember { mutableStateOf<String?>(null) }
 
+    var activeNightTargetId by remember(currentNightQueueIndex, phase) { mutableStateOf<Int?>(null) }
+    val activeNightTargetIds = remember(currentNightQueueIndex, phase) { mutableStateListOf<Int>() }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(top = 10.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Step 1: Redesigned Header Section (Professional Brand Container)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Golden gradient Crown icon
-            Box(
+        if (phase == "Day") {
+            // Step 1: Redesigned Header Section (Professional Brand Container)
+            Column(
                 modifier = Modifier
-                    .size(54.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0xFFFFF9C4), Color(0xFFFFD700), Color(0xFFFFA000))
-                        ),
-                        shape = CircleShape
-                    )
-                    .shadow(8.dp, CircleShape, spotColor = Color(0xFFFFD700), ambientColor = Color(0xFFFFD700)),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text("👑", fontSize = 28.sp)
-            }
-            
-            // "گرداننده مافیا" with a purple gradient brush
-            Text(
-                text = "گرداننده مافیا",
-                style = TextStyle(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(Color(0xFFCE93D8), Color(0xFFBA68C8), Color(0xFF8E24AA))
-                    ),
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            )
-            
-            Text(
-                text = "ابزار حرفه‌ای مدیریت بازی",
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
+                // Golden gradient Crown icon
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
-                        .background(if (phase == "Night") PrimaryPurple else AccentGold, CircleShape)
-                )
+                        .size(54.dp)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(Color(0xFFFFF9C4), Color(0xFFFFD700), Color(0xFFFFA000))
+                            ),
+                            shape = CircleShape
+                        )
+                        .shadow(8.dp, CircleShape, spotColor = Color(0xFFFFD700), ambientColor = Color(0xFFFFD700)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("👑", fontSize = 28.sp)
+                }
+                
+                // "گرداننده مافیا" with a purple gradient brush
                 Text(
-                    text = if (phase == "Night") "شب $currentRound 🌙" else "روز $currentRound ☀️",
-                    color = if (phase == "Night") PrimaryPurple else AccentGold,
+                    text = "گرداننده مافیا",
+                    style = TextStyle(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(Color(0xFFCE93D8), Color(0xFFBA68C8), Color(0xFF8E24AA))
+                        ),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                )
+                
+                Text(
+                    text = "ابزار حرفه‌ای مدیریت بازی",
+                    color = TextSecondary,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Medium
                 )
-            }
-        }
 
-        // Digital Timer: Prominent centered timer (Shrunk layout for maximum space efficiency)
-        val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(vertical = 1.dp)
-                .size(74.dp)
-                .background(Color(0xFF141324), CircleShape)
-                .border(1.5.dp, PrimaryPurple, CircleShape)
-                .then(
-                    Modifier.shadow(4.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
-                )
-                .clickable { onShowTimerModalChange(true) },
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(1.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(AccentGold, CircleShape)
+                    )
+                    Text(
+                        text = "روز $currentRound ☀️",
+                        color = AccentGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Digital Timer: Prominent centered timer
+            val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(vertical = 1.dp)
+                    .size(74.dp)
+                    .background(Color(0xFF141324), CircleShape)
+                    .border(1.5.dp, PrimaryPurple, CircleShape)
+                    .then(
+                        Modifier.shadow(4.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                    )
+                    .clickable { onShowTimerModalChange(true) },
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = formattedTime,
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "باقیمانده",
-                    color = TextGray,
-                    fontSize = 8.sp
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    Text(
+                        text = formattedTime,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "باقیمانده",
+                        color = TextGray,
+                        fontSize = 8.sp
+                    )
+                }
             }
-        }
 
-        // Step 4: End Phase (پایان مرحله) button with Purple-to-Indigo gradient (only visible in Day, or at the end of Night)
-        val showEndPhaseButton = if (phase == "Night") {
-            nightQueue.isEmpty() || currentNightQueueIndex >= nightQueue.size - 1
-        } else {
-            true
-        }
-
-        if (showEndPhaseButton) {
+            // Step 4: End Phase (پایان مرحله) button
             Button(
                 onClick = {
-                    if (phase == "Night") {
-                        showNewNightSummaryDialog = true
-                    } else {
-                        showEndDayConfirmationDialog = true
-                    }
+                    showEndDayConfirmationDialog = true
                 },
-                enabled = if (phase == "Day") isVotingCompleted else true,
+                enabled = isVotingCompleted,
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.Transparent,
@@ -2542,7 +2540,7 @@ fun PlayStageContent(
                     .fillMaxWidth()
                     .height(50.dp)
                     .background(
-                        brush = if (phase == "Day" && !isVotingCompleted) {
+                        brush = if (!isVotingCompleted) {
                             Brush.horizontalGradient(colors = listOf(Color(0xFF23232C), Color(0xFF1C1C22)))
                         } else {
                             Brush.horizontalGradient(colors = listOf(PrimaryPurple, Color(0xFF3F51B5)))
@@ -2551,39 +2549,37 @@ fun PlayStageContent(
                     )
             ) {
                 Text(
-                    text = if (phase == "Night") "پایان مرحله (شروع روز) ☀️" else "پایان مرحله (شروع شب) 🌙",
+                    text = "پایان مرحله (شروع شب) 🌙",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = if (phase == "Day" && !isVotingCompleted) Color.Gray else Color.White
+                    color = if (!isVotingCompleted) Color.Gray else Color.White
                 )
             }
-        }
 
-        // Stats summary band
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceDark, RoundedCornerShape(10.dp))
-                .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "👥 کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "🔍 استعلام مفسر: $remainingInquiries از $totalInquiries",
-                color = AccentGold,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+            // Stats summary band
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SurfaceDark, RoundedCornerShape(10.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "👥 کل افراد زنده: ${players.filter { it.isSelected && it.isAlive }.size} نفر",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "🔍 استعلام مفسر: $remainingInquiries از $totalInquiries",
+                    color = AccentGold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-        if (phase == "Day") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2591,7 +2587,7 @@ fun PlayStageContent(
                 // رای‌گیری (Golden Gradient)
                 Button(
                     onClick = {
-                        val unusedLiveGunPlayers = players.filter { it.isSelected && it.isAlive && it.hasLiveGunThisRound && !it.usedLiveGun }
+                        val unusedLiveGunPlayers = players.filter { it.isSelected && it.isAlive && (it.hasLiveGunThisRound || it.hasCombatGun) && !it.usedLiveGun }
                         if (unusedLiveGunPlayers.isNotEmpty()) {
                             val names = unusedLiveGunPlayers.joinToString("، ") { it.name }
                             triggerConfirmation(
@@ -2652,10 +2648,116 @@ fun PlayStageContent(
                     }
                 }
             }
+        } else {
+            // Minimalist Header for Night Phase
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Home,
+                        contentDescription = "Home",
+                        tint = AccentGold,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clickable { showGlobalNotesDialog = true }
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Notifications",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Text(
+                    text = "شب $currentRound",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                // Small timer capsule in top corner
+                Row(
+                    modifier = Modifier
+                        .background(Color(0xFF141324), RoundedCornerShape(12.dp))
+                        .border(1.dp, PrimaryPurple.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .clickable { onShowTimerModalChange(true) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
+                    Text(
+                        text = formattedTime,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text("🌙", fontSize = 11.sp)
+                }
+            }
+        }
+
+        // --- Redesigned Compact Night Turn Info Banner (ONLY in Night phase) ---
+        if (phase == "Night") {
+            if (currentNightQueueIndex >= nightQueue.size && nightQueue.isNotEmpty()) {
+                currentNightQueueIndex = nightQueue.size - 1
+            }
+            val currentItem = nightQueue.getOrNull(currentNightQueueIndex)
+            if (currentItem != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF140F22)),
+                    border = BorderStroke(1.dp, PrimaryPurple.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "نوبت بیداری: ${currentItem.player.name} (${currentItem.player.assignedRoleName ?: ""})",
+                            color = AccentGold,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = currentItem.ability.name + ": " + currentItem.ability.description,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+
+                        if (currentItem.ability.id == "GRAVEDIG") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isGravedigActive,
+                                    onCheckedChange = { viewModel.setGravedigActive(it) },
+                                    colors = CheckboxDefaults.colors(checkedColor = AccentGold)
+                                )
+                                Text("فعال‌سازی نبش قبر امشب 🪦", color = Color.White, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // --- Dynamic Night Waking Queue Section (ONLY in Night phase) ---
-        if (phase == "Night") {
+        if (false) { // Bypassed old massive card
             // Handle if index gets out of bounds due to player death or count change
             if (currentNightQueueIndex >= nightQueue.size && nightQueue.isNotEmpty()) {
                 currentNightQueueIndex = nightQueue.size - 1
@@ -4644,31 +4746,31 @@ fun PlayStageContent(
                                                       )
                                                   }
                                               }
-                                         }
+                                          }
 
-                                         if (targetPlayer2 != null) {
-                                             Spacer(modifier = Modifier.height(8.dp))
-                                             Row(
-                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                 modifier = Modifier.fillMaxWidth()
-                                             ) {
-                                                 val isBlankEnabled2 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
-                                                 Button(
-                                                     onClick = {
-                                                         viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, false)
-                                                         gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
-                                                         targetId2 = null
-                                                     },
-                                                     enabled = isBlankEnabled2,
-                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
-                                                     modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_2"),
-                                                     shape = RoundedCornerShape(8.dp)
-                                                 ) {
-                                                     Text("تیر مشقی 🔫", color = if (isBlankEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                 }
+                                          if (targetPlayer2 != null) {
+                                              Spacer(modifier = Modifier.height(8.dp))
+                                              Row(
+                                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                  modifier = Modifier.fillMaxWidth()
+                                              ) {
+                                                  val isBlankEnabled2 = isActionAllowed && (blankCap == null || blankCap.remainingCount > 0)
+                                                  Button(
+                                                      onClick = {
+                                                          viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, false)
+                                                          gunAlertMessage = "تیر مشقی با موفقیت به بازیکن «${targetPlayer2.name}» داده شد."
+                                                          targetId2 = null
+                                                      },
+                                                      enabled = isBlankEnabled2,
+                                                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), disabledContainerColor = Color(0xFF1E293B)),
+                                                      modifier = Modifier.weight(1f).testTag("queue_musketeer_blank_gun_2"),
+                                                      shape = RoundedCornerShape(8.dp)
+                                                  ) {
+                                                      Text("تیر مشقی 🔫", color = if (isBlankEnabled2) Color.White else Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                  }
 
-                                                 val anyLiveGunTonight2 = players.any { it.hasLiveGunThisRound }
-                                                 val isLiveEnabled2 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight2 && (liveCap == null || liveCap.remainingCount > 0)
+                                                  val anyLiveGunTonight2 = players.any { it.hasLiveGunThisRound }
+                                                  val isLiveEnabled2 = isActionAllowed && !musketeerLiveGunExhausted && !anyLiveGunTonight2 && (liveCap == null || liveCap.remainingCount > 0)
                                                  Button(
                                                      onClick = {
                                                          viewModel.giveMusketeerGun(currentItem.player.id, targetPlayer2.id, true)
@@ -4726,7 +4828,6 @@ fun PlayStageContent(
                 val filtered = if (phase == "Night") {
                     val independent = active.filter { it.assignedRoleTeam == "Independent" }
                     val mafia = active.filter { it.assignedRoleTeam == "Mafia" }
-                    
                     val citizens = active.filter { it.assignedRoleTeam == "Citizen" }
                     val otherList = active.filter { it.assignedRoleTeam != "Independent" && it.assignedRoleTeam != "Mafia" && it.assignedRoleTeam != "Citizen" }
                     independent + mafia + citizens + otherList
@@ -4765,153 +4866,160 @@ fun PlayStageContent(
                         }
                     }
                 } else {
+                    // New vertical full-width scrollable player list (LazyColumn) for Night phase
+                    val currentItem = nightQueue.getOrNull(currentNightQueueIndex)
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        val chunkedPlayers = activeHandheldPlayers.chunked(4)
-                        items(chunkedPlayers) { rowPlayers ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                rowPlayers.forEach { player ->
-                                    val isDead = !player.isAlive || player.isKilledToday
-                                    val isSelectedForAction = player.isBlockedThisNight || player.isMuted || player.hasLiveGunThisRound
-                                    
-                                    val avatarBg = when {
-                                        isDead -> Color(0xFF2C1315)
-                                        isSelectedForAction -> PrimaryPurple.copy(alpha = 0.15f)
-                                        else -> Color(0xFF141423)
-                                    }
-                                    val avatarBorderColor = when {
-                                        isDead -> Color(0xFFEF4444)
-                                        isSelectedForAction -> PrimaryPurple
-                                        else -> BorderColor
-                                    }
+                        items(activeHandheldPlayers) { player ->
+                            val isHighlighted = when (currentItem?.ability?.id) {
+                                "HACK", "GIVE_GUN" -> activeNightTargetIds.contains(player.id)
+                                else -> activeNightTargetId == player.id
+                            }
 
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable { onPlayerClick(player) }
-                                            .padding(vertical = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            val cardBgColor = when (player.assignedRoleTeam) {
+                                "Citizen" -> Color(0xFF1A3320)
+                                "Mafia" -> Color(0xFF3A1C1C)
+                                "Independent" -> Color(0xFF3D3514)
+                                else -> Color(0xFF141423)
+                            }
+
+                            val isDead = !player.isAlive || player.isKilledToday
+                            val finalCardBgColor = if (isDead) Color(0xFF141423).copy(alpha = 0.6f) else cardBgColor
+
+                            val borderStroke = if (isHighlighted) {
+                                BorderStroke(2.dp, PrimaryPurple)
+                            } else {
+                                BorderStroke(1.dp, BorderColor.copy(alpha = 0.4f))
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = finalCardBgColor),
+                                shape = RoundedCornerShape(12.dp),
+                                border = borderStroke,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (currentItem != null) {
+                                            when (currentItem.ability.id) {
+                                                "HACK" -> {
+                                                    if (activeNightTargetIds.contains(player.id)) {
+                                                        activeNightTargetIds.remove(player.id)
+                                                    } else if (activeNightTargetIds.size < 3) {
+                                                        activeNightTargetIds.add(player.id)
+                                                    }
+                                                }
+                                                "GIVE_GUN" -> {
+                                                    if (activeNightTargetIds.contains(player.id)) {
+                                                        activeNightTargetIds.remove(player.id)
+                                                    } else if (activeNightTargetIds.size < 2) {
+                                                        activeNightTargetIds.add(player.id)
+                                                    }
+                                                }
+                                                else -> {
+                                                    activeNightTargetId = if (activeNightTargetId == player.id) null else player.id
+                                                }
+                                            }
+                                        }
+                                        onPlayerClick(player)
+                                    }
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
+                                        val avatarBg = when (player.assignedRoleTeam) {
+                                            "Mafia" -> Color(0xFF261212)
+                                            "Citizen" -> Color(0xFF102114)
+                                            "Independent" -> Color(0xFF2B250E)
+                                            else -> Color(0xFF0F0F1A)
+                                        }
+                                        val avatarBorderColor = when (player.assignedRoleTeam) {
+                                            "Mafia" -> Color(0xFFE57373)
+                                            "Citizen" -> Color(0xFF81C784)
+                                            "Independent" -> Color(0xFFFFB74D)
+                                            else -> Color(0xFF78909C)
+                                        }
+                                        val emoji = when {
+                                            isDead -> "💀"
+                                            player.assignedRoleTeam == "Mafia" -> "🕶️"
+                                            player.assignedRoleTeam == "Citizen" -> "🕊️"
+                                            else -> "🎭"
+                                        }
+
                                         Box(
                                             modifier = Modifier
-                                                .size(52.dp)
+                                                .size(46.dp)
                                                 .background(avatarBg, CircleShape)
-                                                .border(1.5.dp, avatarBorderColor, CircleShape),
+                                                .border(1.2.dp, avatarBorderColor, CircleShape),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            val emoji = when {
-                                                isDead -> "💀"
-                                                player.assignedRoleTeam == "Mafia" -> "🕶️"
-                                                player.assignedRoleTeam == "Citizen" -> "🕊️"
-                                                else -> "🎭"
-                                            }
-                                            Text(emoji, fontSize = 20.sp)
-
-                                            // Badges overlay
-                                            Box(
-                                                modifier = Modifier.fillMaxSize()
-                                            ) {
-                                                if (player.isBlockedThisNight) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .align(Alignment.TopStart)
-                                                            .size(16.dp)
-                                                            .background(Color(0xFFEF4444), CircleShape)
-                                                            .border(1.dp, Color.White, CircleShape),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text("🚫", fontSize = 8.sp)
-                                                    }
-                                                }
-                                                if (player.isMuted) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .size(16.dp)
-                                                            .background(Color(0xFFF59E0B), CircleShape)
-                                                            .border(1.dp, Color.White, CircleShape),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text("🔇", fontSize = 8.sp)
-                                                    }
-                                                }
-                                                if (player.hasLiveGunThisRound) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .align(Alignment.BottomEnd)
-                                                            .size(16.dp)
-                                                            .background(Color(0xFF10B981), CircleShape)
-                                                            .border(1.dp, Color.White, CircleShape),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text("🔫", fontSize = 8.sp)
-                                                    }
-                                                }
-                                            }
-
-                                            if (isDead) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text("☠️", fontSize = 16.sp)
-                                                }
-                                            }
+                                            Text(emoji, fontSize = 19.sp)
                                         }
 
-                                        Text(
-                                            text = player.name,
-                                            color = Color.White,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-
-                                        val roleText = if (isDead) "حذف شده" else (player.assignedRoleName ?: "نامعلوم")
-                                        val badgeBg = when {
-                                            isDead -> Color(0xFFEF4444).copy(alpha = 0.2f)
-                                            player.assignedRoleTeam == "Mafia" -> Color(0xFFEF4444).copy(alpha = 0.2f)
-                                            player.assignedRoleTeam == "Citizen" -> Color(0xFF10B981).copy(alpha = 0.2f)
-                                            else -> Color(0xFFF59E0B).copy(alpha = 0.2f)
-                                        }
-                                        val badgeBorder = when {
-                                            isDead -> Color(0xFFEF4444)
-                                            player.assignedRoleTeam == "Mafia" -> Color(0xFFEF4444)
-                                            player.assignedRoleTeam == "Citizen" -> Color(0xFF10B981)
-                                            else -> Color(0xFFF59E0B)
-                                        }
-                                        Box(
-                                            modifier = Modifier
-                                                .background(badgeBg, RoundedCornerShape(6.dp))
-                                                .border(0.5.dp, badgeBorder.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
+                                        Column {
                                             Text(
-                                                text = roleText,
-                                                color = Color.White,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                text = player.name,
+                                                color = if (isDead) Color.Gray else Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = player.assignedRoleName ?: "شهروند ساده",
+                                                color = Color.Gray,
+                                                fontSize = 11.sp
                                             )
                                         }
                                     }
-                                }
 
-                                // Fill remaining empty spot in the grid
-                                val remaining = 4 - rowPlayers.size
-                                if (remaining > 0) {
-                                    repeat(remaining) {
-                                        Spacer(modifier = Modifier.weight(1f))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (player.isProtected) {
+                                                StatusTag(text = "دفاع شده", icon = "🛡️", color = Color(0xFFD4AF37))
+                                            }
+                                            if (player.isBlockedThisNight || player.isBlocked) {
+                                                StatusTag(text = "بلاک شده", icon = "🚫", color = Color(0xFFEF4444))
+                                            }
+                                            if (player.isSilencedThisRound || player.isMuted) {
+                                                StatusTag(text = "ساکت شده", icon = "🔇", color = Color(0xFF9E9E9E))
+                                            }
+                                            if (player.isSlaughtered) {
+                                                StatusTag(text = "سلاخی شده", icon = "🔪", color = Color(0xFFC62828))
+                                            }
+                                            if (player.isInsuredThisNight) {
+                                                StatusTag(text = "بیمه شده", icon = "🛡️", color = Color(0xFF4CAF50))
+                                            }
+                                            if (player.isHealedThisNight) {
+                                                StatusTag(text = "نجات یافته", icon = "🩺", color = Color(0xFF81C784))
+                                            }
+                                            if (isDead) {
+                                                StatusTag(text = "کشته", icon = "💀", color = Color(0xFF757575))
+                                            }
+                                        }
+
+                                        val playerNumber = players.indexOf(player) + 1
+                                        Text(
+                                            text = playerNumber.toString(),
+                                            color = Color.Gray,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(start = 4.dp)
+                                        )
                                     }
                                 }
                             }
@@ -5022,67 +5130,195 @@ fun PlayStageContent(
             }
         }
 
-        // Step 4: Sticky Bottom Utility Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceDark, RoundedCornerShape(14.dp))
-                .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
-                .padding(vertical = 8.dp, horizontal = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Notes Button
-            Column(
-                modifier = Modifier
-                    .clickable { showGlobalNotesDialog = true }
-                    .padding(horizontal = 12.dp, vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "یادداشت",
-                    tint = AccentGold,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text("یادداشت", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-
-            // Announcements Button
-            Column(
-                modifier = Modifier
-                    .clickable {
-                        showLogsStream = !showLogsStream
+        // Step 4: Sticky Bottom Utility Bar / Large action confirm button
+        if (phase == "Night") {
+            // Large action button at the bottom for Night phase
+            val currentItem = nightQueue.getOrNull(currentNightQueueIndex)
+            val isLastAction = currentNightQueueIndex >= nightQueue.size - 1
+            val actionText = if (isLastAction) "اتمام فاز شب و شروع روز بعد" else "ثبت حرکت و نفر بعدی »"
+            
+            Button(
+                onClick = {
+                    val targetId = activeNightTargetId
+                    if (currentItem != null) {
+                        when (currentItem.ability.id) {
+                            "VETO" -> {
+                                if (targetId != null) {
+                                    viewModel.executeVeto(currentItem.player.id, targetId)
+                                }
+                            }
+                            "HACK" -> {
+                                viewModel.hackerScan(currentItem.player.id, activeNightTargetIds.toList()) { _, _ -> }
+                            }
+                            "INTOXICATE" -> {
+                                if (targetId != null) {
+                                    viewModel.intoxicatePlayer(currentItem.player.id, targetId, currentRound) { _, _ -> }
+                                }
+                            }
+                            "GRAVEDIG" -> {
+                                viewModel.setGravedigActive(isGravedigActive)
+                            }
+                            "UNSILENCE" -> {
+                                if (targetId != null) {
+                                    viewModel.unsilencePlayer(currentItem.player.id, targetId)
+                                }
+                            }
+                            "INSURE" -> {
+                                if (targetId != null) {
+                                    viewModel.insurePlayer(currentItem.player.id, targetId)
+                                }
+                            }
+                            "BLOCK" -> {
+                                if (targetId != null) {
+                                    viewModel.matadorBlock(currentItem.player.id, targetId)
+                                }
+                            }
+                            "HEAL" -> {
+                                if (targetId != null) {
+                                    viewModel.doctorHeal(currentItem.player.id, targetId)
+                                }
+                            }
+                            "SLAUGHTER" -> {
+                                if (targetId != null) {
+                                    val isGodfather = currentItem.player.assignedRoleName?.contains("رئیس") == true || currentItem.player.assignedRoleName?.contains("پدرخوانده") == true
+                                    if (isGodfather) {
+                                        viewModel.godfatherSlaughter(currentItem.player.id, targetId)
+                                    } else {
+                                        viewModel.professionalSlaughter(currentItem.player.id, targetId)
+                                    }
+                                }
+                            }
+                            "SHOOT" -> {
+                                if (targetId != null) {
+                                    val isGodfather = currentItem.player.assignedRoleName?.contains("رئیس") == true || currentItem.player.assignedRoleName?.contains("پدرخوانده") == true
+                                    if (isGodfather) {
+                                        viewModel.godfatherShoot(currentItem.player.id, targetId)
+                                    } else {
+                                        viewModel.professionalShoot(currentItem.player.id, targetId, null)
+                                    }
+                                }
+                            }
+                            "RECRUIT" -> {
+                                if (targetId != null) {
+                                    val isBuyer = currentItem.player.assignedRoleName?.contains("خریدار") == true
+                                    if (isBuyer) {
+                                        viewModel.buyerRecruit(currentItem.player.id, targetId) { }
+                                    } else {
+                                        viewModel.godfatherRecruit(currentItem.player.id, targetId) { }
+                                    }
+                                }
+                            }
+                            "GIVE_GUN" -> {
+                                val t1 = activeNightTargetIds.getOrNull(0)
+                                val t2 = activeNightTargetIds.getOrNull(1)
+                                if (t1 != null) {
+                                    viewModel.giveMusketeerGun(currentItem.player.id, t1, true)
+                                }
+                                if (t2 != null) {
+                                    viewModel.giveMusketeerGun(currentItem.player.id, t2, false)
+                                }
+                            }
+                        }
                     }
-                    .padding(horizontal = 12.dp, vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = "اعلان",
-                    tint = PrimaryPurple,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text("اعلان عمومی", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
 
-            // History Button
-            Column(
+                    if (currentNightQueueIndex < nightQueue.size - 1) {
+                        currentNightQueueIndex += 1
+                    } else {
+                        showNewNightSummaryDialog = true
+                    }
+                    activeNightTargetId = null
+                    activeNightTargetIds.clear()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryPurple,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
-                    .clickable { showLocalHistoryDialog = true }
-                    .padding(horizontal = 12.dp, vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .testTag("night_action_confirm_button")
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "تاریخچه",
-                    tint = AccentCitizen,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text("تاریخچه", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = actionText,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "بعدی",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SurfaceDark, RoundedCornerShape(14.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
+                    .padding(vertical = 8.dp, horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Notes Button
+                Column(
+                    modifier = Modifier
+                        .clickable { showGlobalNotesDialog = true }
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "یادداشت",
+                        tint = AccentGold,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("یادداشت", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Announcements Button
+                Column(
+                    modifier = Modifier
+                        .clickable {
+                            showLogsStream = !showLogsStream
+                        }
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "اعلان",
+                        tint = PrimaryPurple,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("اعلان عمومی", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // History Button
+                Column(
+                    modifier = Modifier
+                        .clickable { showLocalHistoryDialog = true }
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "تاریخچه",
+                        tint = AccentCitizen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("تاریخچه", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -6321,7 +6557,7 @@ fun DayPlayerCard(
                             borderColor = Color(0xFFF59E0B)
                         )
                     }
-                    if (player.hasLiveGunThisRound && !player.usedLiveGun) {
+                    if ((player.hasLiveGunThisRound && !player.usedLiveGun) || player.hasCombatGun || player.hasBlankGun) {
                         DynamicStatusIcon(
                             emoji = "🔫",
                             bgColor = Color(0xFF10B981).copy(alpha = 0.15f),
@@ -6532,7 +6768,7 @@ fun PlayerLiveCard(
                     if (isInDefense && phase == "Day") {
                         BadgeLabel(text = "دفاع ⚖️", bgColor = Color(0xFF4D1D16), txtColor = Color(0xFFFFB300))
                     }
-                    if (phase == "Day" && (player.hasBlankGunThisRound || player.hasLiveGunThisRound)) {
+                    if (phase == "Day" && (player.hasBlankGunThisRound || player.hasLiveGunThisRound || player.hasCombatGun || player.hasBlankGun)) {
                         BadgeLabel(text = "مسلح 🔫", bgColor = Color(0xFF1E293B), txtColor = Color(0xFF60A5FA))
                     }
 
@@ -6810,7 +7046,8 @@ fun PlayerSettingsDialog(
     onConstantineRevive: (Int, Int) -> Unit = { _, _ -> },
     onCitizenKaneReveal: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onGiveGun: (Int, Int, Boolean) -> Unit = { _, _, _ -> },
-    musketeerLiveGunExhausted: Boolean = false
+    musketeerLiveGunExhausted: Boolean = false,
+    onDirectCombatShot: (Int, Int) -> Unit = { _, _ -> }
 ) {
     var noteText by remember { mutableStateOf(player.note) }
     var showOverrideDialog by remember { mutableStateOf(false) }
@@ -6828,6 +7065,8 @@ fun PlayerSettingsDialog(
 
     var showLastMoveDrawDialog by remember { mutableStateOf(false) }
     var showGeneralResultDialog by remember { mutableStateOf<String?>(null) }
+    var expandedCombatTarget by remember { mutableStateOf(false) }
+    var selectedCombatTarget by remember { mutableStateOf<PlayerEntity?>(null) }
 
     val handleDismiss = {
         onUpdateNote(player.id, noteText)
@@ -8610,6 +8849,79 @@ fun PlayerSettingsDialog(
                                 colors = CheckboxDefaults.colors(checkedColor = AccentCrimson),
                                 modifier = Modifier.size(24.dp)
                             )
+                        }
+                    }
+                }
+
+                // Section 5.6: Combat Gun Shoot (Day direct shot)
+                if (player.isAlive && player.hasCombatGun) {
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = "💥 قابلیت شلیک مستقیم با تفنگ جنگی:", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2C1318), RoundedCornerShape(10.dp))
+                                .border(1.5.dp, AccentCrimson, RoundedCornerShape(10.dp))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = "شلیک مستقیم (تفنگ جنگی)",
+                                color = AccentCrimson,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF191928), RoundedCornerShape(6.dp))
+                                    .clickable { expandedCombatTarget = true }
+                                    .padding(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = selectedCombatTarget?.name ?: "انتخاب بازیکن هدف برای شلیک... 👥",
+                                        color = if (selectedCombatTarget != null) Color.White else Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentGold)
+                                }
+                                DropdownMenu(
+                                    expanded = expandedCombatTarget,
+                                    onDismissRequest = { expandedCombatTarget = false },
+                                    modifier = Modifier.fillMaxWidth(0.8f).background(SurfaceDark).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                ) {
+                                    players.filter { it.isSelected && it.isAlive && it.id != player.id }.forEach { aliveP ->
+                                        DropdownMenuItem(
+                                            text = { Text("${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})", color = Color.White, fontSize = 11.sp) },
+                                            onClick = { selectedCombatTarget = aliveP; expandedCombatTarget = false }
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            if (selectedCombatTarget != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        onDirectCombatShot(player.id, selectedCombatTarget!!.id)
+                                        selectedCombatTarget = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson),
+                                    modifier = Modifier.fillMaxWidth().testTag("direct_combat_shoot_confirm"),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("تایید شلیک و حذف بازیکن 💀", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }
@@ -11407,12 +11719,31 @@ fun RevealActionContent(
 }
 
 @Composable
-fun RecentGameCard(
-    title: String,
-    subtitle: String,
-    avatarEmoji: String = "👤",
+fun GameSessionCard(
+    session: GameSessionEntity,
     onClick: () -> Unit
 ) {
+    val formattedTime = remember(session.timestamp) {
+        try {
+            val sdf = java.text.SimpleDateFormat("yyyy/MM/dd - HH:mm", java.util.Locale.getDefault())
+            sdf.format(java.util.Date(session.timestamp))
+        } catch (e: Exception) {
+            "نامشخص"
+        }
+    }
+    val playersCount = remember(session.playersJson) {
+        try {
+            val list = kotlinx.serialization.json.Json.decodeFromString<List<PlayerEntity>>(session.playersJson)
+            list.size
+        } catch (e: Exception) {
+            0
+        }
+    }
+    val isFinished = session.status == "FINISHED"
+    val statusText = if (isFinished) "پایان یافته" else "ناتمام"
+    val statusColor = if (isFinished) Color(0xFF10B981) else Color(0xFFF59E0B)
+    val statusBg = if (isFinished) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -11433,7 +11764,7 @@ fun RecentGameCard(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = avatarEmoji,
+                text = if (isFinished) "🏆" else "🎮",
                 fontSize = 20.sp
             )
         }
@@ -11443,15 +11774,36 @@ fun RecentGameCard(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "بازی $playersCount نفره",
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Start
+                )
+                
+                // Status Badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(statusBg)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Text(
-                text = title,
-                color = TextWhite,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                textAlign = TextAlign.Start
-            )
-            Text(
-                text = subtitle,
+                text = "زمان: $formattedTime" + if (session.moderatorName.isNotBlank()) " • گرداننده: ${session.moderatorName}" else "",
                 color = TextGray,
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
@@ -11471,9 +11823,12 @@ fun RecentGameCard(
 
 @Composable
 fun HomeScreen(
+    gameSessions: List<GameSessionEntity>,
     onStartNewGame: () -> Unit,
+    onResumeGame: (Int) -> Unit,
     onShowHistory: () -> Unit
 ) {
+    val context = LocalContext.current
     var showAboutDialog by remember { mutableStateOf(false) }
     var currentTab by remember { mutableStateOf("خانه") }
 
@@ -11538,154 +11893,170 @@ fun HomeScreen(
         containerColor = BackgroundDark,
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(BackgroundDark)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Screen Header title (centered)
-            Text(
-                text = "داشبورد اصلی",
-                color = TextWhite,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-            )
-
-            // Welcome Card Area
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(SurfaceDark)
-                    .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Crown emoji
-                Box(
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                // Screen Header title (centered)
+                Text(
+                    text = "داشبورد اصلی",
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .size(48.dp)
-                        .background(Color(0xFF2E2E3E), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "👑",
-                        fontSize = 24.sp
-                    )
-                }
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "خوش آمدی، گرداننده",
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        textAlign = TextAlign.Start
-                    )
-                    Text(
-                        text = "بازی جدید بساز یا ادامه بده.",
-                        color = TextGray,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Start
-                    )
-                }
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                )
             }
 
-            // Massive primary actions button switch to setup
-            Button(
-                onClick = onStartNewGame,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryPurple,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .testTag("start_new_game_button")
-            ) {
+            item {
+                // Welcome Card Area
                 Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceDark)
+                        .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "➕ ساخت بازی جدید",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    // Crown emoji
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color(0xFF2E2E3E), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "👑",
+                            fontSize = 24.sp
+                        )
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "خوش آمدی، گرداننده",
+                            color = TextWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Start
+                        )
+                        Text(
+                            text = "بازی جدید بساز یا ادامه بده.",
+                            color = TextGray,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Start
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            item {
+                // Massive primary actions button switch to setup
+                Button(
+                    onClick = onStartNewGame,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryPurple,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .testTag("start_new_game_button")
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "➕ ساخت بازی جدید",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // Recent Games Section
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            item {
                 Text(
                     text = "بازی‌های اخیر",
                     color = TextWhite,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                )
-
-                RecentGameCard(
-                    title = "بازی ۱۲ نفره حرفه‌ای",
-                    subtitle = "دیروز ۲۲:۲۵",
-                    avatarEmoji = "🧑‍💻",
-                    onClick = onStartNewGame
-                )
-
-                RecentGameCard(
-                    title = "بازی ۸ نفره کلاسیک",
-                    subtitle = "دو روز پیش ۲۱:۱۵",
-                    avatarEmoji = "🕵️",
-                    onClick = onStartNewGame
-                )
-
-                RecentGameCard(
-                    title = "بازی ۱۰ نفره دوستانه",
-                    subtitle = "سه روز پیش ۲۳:۴۵",
-                    avatarEmoji = "👥",
-                    onClick = onStartNewGame
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            if (gameSessions.isEmpty()) {
+                item {
+                    Text(
+                        text = "هنوز بازی ثبت نشده است",
+                        color = TextGray,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp)
+                    )
+                }
+            } else {
+                items(gameSessions) { session ->
+                    GameSessionCard(
+                        session = session,
+                        onClick = {
+                            if (session.status == "IN_PROGRESS") {
+                                onResumeGame(session.id)
+                            } else {
+                                Toast.makeText(context, "این بازی به پایان رسیده است 🔚", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+            }
 
-            // About App Mini button
-            TextButton(
-                onClick = { showAboutDialog = true },
-                modifier = Modifier.testTag("about_app_text_button")
-            ) {
-                Text(
-                    text = "ℹ️ درباره برنامه و راهنما",
-                    color = TextGray,
-                    fontSize = 13.sp,
-                    textDecoration = TextDecoration.Underline,
-                    textAlign = TextAlign.Center
-                )
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // About App Mini button
+                TextButton(
+                    onClick = { showAboutDialog = true },
+                    modifier = Modifier.testTag("about_app_text_button")
+                ) {
+                    Text(
+                        text = "ℹ️ درباره برنامه و راهنما",
+                        color = TextGray,
+                        fontSize = 13.sp,
+                        textDecoration = TextDecoration.Underline,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
+    }
     }
 
     if (showAboutDialog) {
@@ -12027,6 +12398,21 @@ fun PlayerNightGridItem(
             fontSize = 10.sp,
             textAlign = TextAlign.Center
         )
+    }
+}
+
+@Composable
+fun StatusTag(text: String, icon: String, color: Color) {
+    Row(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+            .border(0.5.dp, color.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 9.sp)
+        Text(text, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
 }
 

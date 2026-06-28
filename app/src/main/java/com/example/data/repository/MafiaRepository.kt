@@ -5,6 +5,7 @@ import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
 import com.example.data.model.GameHistoryEntity
+import com.example.data.model.GameSessionEntity
 import kotlinx.coroutines.flow.Flow
 
 class MafiaRepository(private val mafiaDao: MafiaDao) {
@@ -13,6 +14,12 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
     val allRoles: Flow<List<RoleEntity>> = mafiaDao.getAllRolesFlow()
     val allLogs: Flow<List<GameLogEntity>> = mafiaDao.getAllLogsFlow()
     val allGameHistory: Flow<List<GameHistoryEntity>> = mafiaDao.getAllGameHistoryFlow()
+    val allGameSessions: Flow<List<GameSessionEntity>> = mafiaDao.getAllGameSessionsFlow()
+
+    suspend fun insertGameSession(session: GameSessionEntity) = mafiaDao.insertGameSession(session)
+    suspend fun getGameSessionById(id: Int) = mafiaDao.getGameSessionById(id)
+    suspend fun deleteGameSession(session: GameSessionEntity) = mafiaDao.deleteGameSession(session)
+    suspend fun deleteGameSessionById(id: Int) = mafiaDao.deleteGameSessionById(id)
 
     suspend fun getAllPlayersList() = mafiaDao.getAllPlayersList()
     suspend fun getPlayerById(id: Int) = mafiaDao.getPlayerById(id)

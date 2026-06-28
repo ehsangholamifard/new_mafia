@@ -52,6 +52,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     val roles: StateFlow<List<RoleEntity>>
     val gameLogs: StateFlow<List<GameLogEntity>>
     val gameHistory: StateFlow<List<GameHistoryEntity>>
+    val gameSessions: StateFlow<List<GameSessionEntity>>
 
     // Game state: "SETUP", "DISTRIBUTION", "PLAY"
     private val _gameStage = MutableStateFlow("SETUP")
@@ -211,6 +212,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         gameHistory = repository.allGameHistory.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        gameSessions = repository.allGameSessions.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -765,6 +772,26 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 moderatorName = _moderatorName.value
             )
             repository.insertGameHistory(historyEntry)
+
+            // Also save as FINISHED game session
+            val sessionEntry = com.example.data.model.GameSessionEntity(
+                status = "FINISHED",
+                moderatorName = _moderatorName.value,
+                gameStage = _gameStage.value,
+                gamePhase = _gamePhase.value,
+                playersJson = playersJson,
+                logsJson = logsJson,
+                rolesJson = Json.encodeToString(roles.value),
+                remainingInquiries = _remainingInquiries.value,
+                totalInquiries = _totalInquiries.value,
+                sagiCooldownNight = _sagiCooldownNight.value,
+                churchillLastShotNight = _churchillLastShotNight.value,
+                sagiPastTargetsJson = Json.encodeToString(_sagiPastTargets.value),
+                isGravedigActiveThisNight = _isGravedigActiveThisNight.value,
+                natoWrongGuessesCount = _natoWrongGuessesCount.value,
+                musketeerLiveGunExhausted = _musketeerLiveGunExhausted.value
+            )
+            repository.insertGameSession(sessionEntry)
         }
     }
 
@@ -840,6 +867,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         finalAlive = false
                         repository.addLog("💀 بازیکن «${it.name}» (${it.assignedRoleName ?: "همشهری کین"}) به علت استفاده از قابلیت خود (جان فدا) قربانی شد.")
                     }
+                    if (it.hasCombatGun && finalAlive) {
+                        finalAlive = false
+                        repository.addLog("☠️ جریمه تفنگ جنگی بلااستفاده: بازیکن «${it.name}» به علت عدم استفاده از تفنگ جنگی خود پیش از پایان فاز، کشته شد.")
+                    }
                     it.copy(
                         voteCount = 0,
                         isSaved = false,  // reset night buffers as we enter custom night
@@ -856,6 +887,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isVoteRevoked = false, // Day ends, vote restriction expires
                         hasBlankGunThisRound = false, // Day to Night cleanup (Part 5)
                         hasLiveGunThisRound = false, // Day to Night cleanup (Part 5)
+                        hasBlankGun = false,
+                        hasCombatGun = false,
                         usedLiveGun = false, // Day to Night cleanup (Part 5)
                         isSilencedThisRound = false,
                         isSabotaged = false,
@@ -868,21 +901,29 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 var liveGunSurvived = false
                 val updated = players.value.map { player ->
                     var hasLiveGun = player.hasLiveGunThisRound
+                    var hasCombat = player.hasCombatGun
                     if (hasLiveGun) {
                         if (!player.isAlive) {
                             hasLiveGun = false // Clear flag, gun is returned! (Part 2)
+                            hasCombat = false
                             repository.addLog("🔄 بازیکن تفنگدار با تفنگ جنگی «${player.name}» دیشب کشته شد، تفنگ جنگی به تفنگدار بازگردانده شد.")
                         } else {
                             liveGunSurvived = true // Survived, lock Musketeer's ability! (Part 2)
                             repository.addLog("🔒 بازیکن «${player.name}» تفنگ جنگی را با خود به روز برد. قابلیت تفنگ جنگی تفنگدار برای ادامه بازی قفل شد.")
                         }
                     }
+                    var hasBlank = player.hasBlankGun
+                    if (player.hasBlankGunThisRound && !player.isAlive) {
+                        hasBlank = false
+                    }
                     player.copy(
                         isBlocked = false, // Night ends, block expires
                         wasBlockedLastNight = player.isBlockedThisNight,
                         isBlockedThisNight = false, // Reset Matador's night block
                         isInsuredThisNight = false,
-                        hasLiveGunThisRound = hasLiveGun
+                        hasLiveGunThisRound = hasLiveGun,
+                        hasCombatGun = hasCombat,
+                        hasBlankGun = hasBlank
                     )
                 }
                 if (liveGunSurvived) {
@@ -924,6 +965,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isRevivedThisNight = false,
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
+                    hasBlankGun = false,
+                    hasCombatGun = false,
                     usedLiveGun = false,
                     isSilencedThisRound = false,
                     isKilledByChurchill = false,
@@ -2255,16 +2298,16 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 // Clear any other player's current tonight live gun flag so there's at most 1 live gun assigned per night.
                 val playersList = repository.getAllPlayersList()
                 val updatedList = playersList.map {
-                    if (it.hasLiveGunThisRound) it.copy(hasLiveGunThisRound = false) else it
+                    if (it.hasLiveGunThisRound) it.copy(hasLiveGunThisRound = false, hasCombatGun = false) else it
                 }
                 repository.insertPlayers(updatedList)
 
                 val freshTarget = repository.getPlayerById(targetId) ?: target
-                val finalTarget = freshTarget.copy(hasLiveGunThisRound = true, hasBlankGunThisRound = false)
+                val finalTarget = freshTarget.copy(hasLiveGunThisRound = true, hasBlankGunThisRound = false, hasCombatGun = true, hasBlankGun = false)
                 repository.updatePlayer(finalTarget)
                 repository.addLog("🔫 تفنگدار «${musketeer.name}» تفنگ جنگی به بازیکن «${target.name}» اعطا کرد.")
             } else {
-                val finalTarget = target.copy(hasBlankGunThisRound = true, hasLiveGunThisRound = false)
+                val finalTarget = target.copy(hasBlankGunThisRound = true, hasLiveGunThisRound = false, hasBlankGun = true, hasCombatGun = false)
                 repository.updatePlayer(finalTarget)
                 repository.addLog("🔫 تفنگدار «${musketeer.name}» تفنگ مشقی به بازیکن «${target.name}» اعطا کرد.")
             }
@@ -2398,5 +2441,117 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             return transformedTarget
         }
         return target
+    }
+
+    fun executeDirectCombatShot(shooterId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val shooter = repository.getPlayerById(shooterId) ?: return@launch
+            val target = repository.getPlayerById(targetId) ?: return@launch
+            
+            val updatedTarget = target.copy(isAlive = false)
+            repository.updatePlayer(updatedTarget)
+            
+            val updatedShooter = shooter.copy(
+                hasCombatGun = false,
+                hasLiveGunThisRound = false,
+                usedLiveGun = true
+            )
+            repository.updatePlayer(updatedShooter)
+            
+            repository.addLog("💥 شلیک مستقیم: بازیکن «${shooter.name}» با استفاده از تفنگ جنگی خود به بازیکن «${target.name}» شلیک کرد و او را به قتل رساند 💀")
+            
+            if (_selectedPlayerForSettings.value?.id == shooterId) {
+                _selectedPlayerForSettings.value = null
+            }
+        }
+    }
+
+    fun saveActiveGameSession(status: String = "IN_PROGRESS") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val playersJson = Json.encodeToString(players.value)
+            val logsJson = Json.encodeToString(gameLogs.value)
+            val rolesJson = Json.encodeToString(roles.value)
+            val sagiPastTargetsJson = Json.encodeToString(sagiPastTargets.value)
+
+            val session = com.example.data.model.GameSessionEntity(
+                status = status,
+                moderatorName = _moderatorName.value,
+                gameStage = _gameStage.value,
+                gamePhase = _gamePhase.value,
+                playersJson = playersJson,
+                logsJson = logsJson,
+                rolesJson = rolesJson,
+                remainingInquiries = _remainingInquiries.value,
+                totalInquiries = _totalInquiries.value,
+                sagiCooldownNight = _sagiCooldownNight.value,
+                churchillLastShotNight = _churchillLastShotNight.value,
+                sagiPastTargetsJson = sagiPastTargetsJson,
+                isGravedigActiveThisNight = _isGravedigActiveThisNight.value,
+                natoWrongGuessesCount = _natoWrongGuessesCount.value,
+                musketeerLiveGunExhausted = _musketeerLiveGunExhausted.value
+            )
+            repository.insertGameSession(session)
+        }
+    }
+
+    fun resumeGameSession(sessionId: Int, onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = repository.getGameSessionById(sessionId) ?: return@launch
+            
+            // Restore VM memory states
+            _gameStage.value = session.gameStage
+            _gamePhase.value = session.gamePhase
+            _moderatorName.value = session.moderatorName
+            _remainingInquiries.value = session.remainingInquiries
+            _totalInquiries.value = session.totalInquiries
+            _sagiCooldownNight.value = session.sagiCooldownNight
+            _churchillLastShotNight.value = session.churchillLastShotNight
+            _isGravedigActiveThisNight.value = session.isGravedigActiveThisNight
+            _natoWrongGuessesCount.value = session.natoWrongGuessesCount
+            _musketeerLiveGunExhausted.value = session.musketeerLiveGunExhausted
+            
+            try {
+                _sagiPastTargets.value = Json.decodeFromString<List<Int>>(session.sagiPastTargetsJson)
+            } catch (e: Exception) {
+                _sagiPastTargets.value = emptyList()
+            }
+
+            // Restore Database - Players
+            try {
+                val restoredPlayers = Json.decodeFromString<List<PlayerEntity>>(session.playersJson)
+                repository.deleteAllPlayers()
+                repository.insertPlayers(restoredPlayers)
+            } catch (e: Exception) {
+                // fallback
+            }
+
+            // Restore Database - Roles
+            if (session.rolesJson.isNotBlank()) {
+                try {
+                    val restoredRoles = Json.decodeFromString<List<RoleEntity>>(session.rolesJson)
+                    repository.deleteAllRoles()
+                    repository.insertRoles(restoredRoles)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+
+            // Restore Database - Logs
+            try {
+                val restoredLogs = Json.decodeFromString<List<GameLogEntity>>(session.logsJson)
+                repository.clearLogs()
+                // Insert logs in reverse order since addLog prepends or orders them. 
+                // Let's add them so they have original message and order.
+                restoredLogs.reversed().forEach { log ->
+                    repository.addLog(log.message, log.phase)
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
     }
 }

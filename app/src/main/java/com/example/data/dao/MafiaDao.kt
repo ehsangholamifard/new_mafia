@@ -5,6 +5,7 @@ import com.example.data.model.PlayerEntity
 import com.example.data.model.RoleEntity
 import com.example.data.model.GameLogEntity
 import com.example.data.model.GameHistoryEntity
+import com.example.data.model.GameSessionEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -75,4 +76,20 @@ interface MafiaDao {
     
     @Delete
     suspend fun deleteGameHistory(history: GameHistoryEntity)
+
+    // --- Game Sessions ---
+    @Query("SELECT * FROM game_sessions ORDER BY timestamp DESC")
+    fun getAllGameSessionsFlow(): Flow<List<GameSessionEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGameSession(session: GameSessionEntity): Long
+
+    @Query("SELECT * FROM game_sessions WHERE id = :id")
+    suspend fun getGameSessionById(id: Int): GameSessionEntity?
+
+    @Delete
+    suspend fun deleteGameSession(session: GameSessionEntity)
+
+    @Query("DELETE FROM game_sessions WHERE id = :id")
+    suspend fun deleteGameSessionById(id: Int)
 }
