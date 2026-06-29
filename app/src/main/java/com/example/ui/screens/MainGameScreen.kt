@@ -1100,6 +1100,8 @@ fun SetupStageContent(
 ) {
     var playerInputText by remember { mutableStateOf("") }
     var showPlayerModal by remember { mutableStateOf(false) }
+    var showRoleModal by remember { mutableStateOf(false) }
+    var showAdvancedModal by remember { mutableStateOf(false) }
 
     val selectedCount = remember(players) { players.filter { it.isSelected }.size }
 
@@ -1174,7 +1176,7 @@ fun SetupStageContent(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* Do nothing for now */ }
+                .clickable { showRoleModal = true }
         ) {
             Row(
                 modifier = Modifier
@@ -1207,7 +1209,7 @@ fun SetupStageContent(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "تعیین و تنظیم سناریو، تعداد و توزیع کارت‌های نقش مافیا و شهروند",
+                        text = "تعیین و تنظیم سناریو (${roles.sumOf { it.count }} نقش انتخاب شده)",
                         color = TextGray,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
@@ -1223,7 +1225,7 @@ fun SetupStageContent(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* Do nothing for now */ }
+                .clickable { showAdvancedModal = true }
         ) {
             Row(
                 modifier = Modifier
@@ -1520,6 +1522,601 @@ fun SetupStageContent(
                             .height(48.dp)
                     ) {
                         Text("تایید و بازگشت به تنظیمات", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRoleModal) {
+        var selectedFilter by remember { mutableStateOf("همه") }
+        var searchQuery by remember { mutableStateOf("") }
+
+        Dialog(
+            onDismissRequest = { showRoleModal = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .fillMaxHeight(0.85f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Header: Title "انتخاب نقشهای سناریو" and a Close (X) icon
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "انتخاب نقش‌های سناریو",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                        IconButton(onClick = { showRoleModal = false }, modifier = Modifier.size(36.dp)) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "بستن", tint = Color.Gray)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+
+                    // Filters & Search:
+                    val filters = listOf("همه", "شهروند", "مافیا", "مستقل")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        filters.forEach { filter ->
+                            val isSelected = selectedFilter == filter
+                            val chipBg = if (isSelected) PrimaryPurple else Color(0xFF1C1C2E)
+                            val chipText = if (isSelected) Color.White else Color.Gray
+                            val chipBorder = if (isSelected) PrimaryPurple else BorderColor
+                            
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(chipBg)
+                                    .border(1.dp, chipBorder, RoundedCornerShape(8.dp))
+                                    .clickable { selectedFilter = filter }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .testTag("filter_chip_$filter")
+                            ) {
+                                Text(
+                                    text = filter,
+                                    color = chipText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Below the tabs, add a minimalist TextField for "جستجوی نقش..." (Search)
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("جستجوی نقش...", color = Color.Gray, fontSize = 13.sp) },
+                        singleLine = true,
+                        maxLines = 1,
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = PrimaryPurple,
+                            unfocusedBorderColor = BorderColor,
+                            focusedContainerColor = Color(0xFF13131F),
+                            unfocusedContainerColor = Color(0xFF13131F)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("search_roles_input")
+                    )
+
+                    // Role List (LazyColumn):
+                    val filteredRoles = remember(roles, selectedFilter, searchQuery) {
+                        roles.filter { role ->
+                            val matchesFilter = when (selectedFilter) {
+                                "شهروند" -> role.team == "Citizen"
+                                "مافیا" -> role.team == "Mafia"
+                                "مستقل" -> role.team == "Independent"
+                                else -> true
+                            }
+                            val matchesSearch = role.name.contains(searchQuery, ignoreCase = true) ||
+                                    role.description.contains(searchQuery, ignoreCase = true)
+                            matchesFilter && matchesSearch
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                            .background(Color(0xFF13131F))
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (filteredRoles.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("نقشی یافت نشد.", color = TextGray, fontSize = 13.sp)
+                                }
+                            }
+                        } else {
+                            items(filteredRoles) { role ->
+                                val context = LocalContext.current
+                                val isUnique = !role.name.contains("ساده")
+                                val isUniqueAndMaxed = isUnique && role.count >= 1
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            color = if (role.count > 0) PrimaryPurple.copy(alpha = 0.1f) else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (role.count > 0) PrimaryPurple.copy(alpha = 0.3f) else BorderColor,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Right side: Role Name and an existing icon/emoji
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(Color(0xFF1E1E2F), CircleShape)
+                                                .border(1.dp, BorderColor, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = if (role.iconName.isNotBlank()) role.iconName else "🎭",
+                                                fontSize = 18.sp
+                                            )
+                                        }
+
+                                        Column {
+                                            Text(
+                                                text = role.name,
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (role.description.isNotBlank()) {
+                                                Text(
+                                                    text = role.description,
+                                                    color = TextGray,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Left side: A prominent Add/Checkbox button to toggle its selection in the current scenario
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (role.count > 0) {
+                                            // Display Count Badge for multiple count roles
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(PrimaryPurple, RoundedCornerShape(6.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${role.count}x",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            
+                                            // Minus button for multiple count roles
+                                            if (!isUnique) {
+                                                IconButton(
+                                                    onClick = { onDecrementRole(role.id) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Text("−", color = AccentCrimson, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                                }
+                                            }
+                                        }
+
+                                        Checkbox(
+                                            checked = role.count > 0,
+                                            onCheckedChange = { isChecked ->
+                                                if (isChecked) {
+                                                    if (isUniqueAndMaxed) {
+                                                        Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        onIncrementRole(role.id)
+                                                    }
+                                                } else {
+                                                    onDecrementRole(role.id)
+                                                }
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryPurple),
+                                            modifier = Modifier.testTag("role_toggle_${role.id}")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Smart Footer (CRITICAL UI LOGIC):
+                    val selectedPlayersCount = players.filter { it.isSelected }.size
+                    val selectedRolesCount = roles.sumOf { it.count }
+                    val countsAreEqual = selectedPlayersCount == selectedRolesCount
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "بازیکنان: $selectedPlayersCount | نقش‌های انتخاب شده: $selectedRolesCount",
+                            color = if (countsAreEqual) AccentCitizen else AccentGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+
+                        Button(
+                            onClick = {
+                                if (countsAreEqual) {
+                                    showRoleModal = false
+                                }
+                            },
+                            enabled = countsAreEqual,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (countsAreEqual) PrimaryPurple else Color(0xFF333333),
+                                disabledContainerColor = Color(0xFF333333),
+                                contentColor = Color.White,
+                                disabledContentColor = Color.Gray
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("confirm_roles_button")
+                        ) {
+                            Text(
+                                text = if (countsAreEqual) "تایید و بازگشت" else "تعداد نقش و بازیکن برابر نیست",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAdvancedModal) {
+        var newCardName by remember { mutableStateOf("") }
+        var newCardDesc by remember { mutableStateOf("") }
+
+        Dialog(
+            onDismissRequest = { showAdvancedModal = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .fillMaxHeight(0.85f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "تنظیمات پیشرفته بازی",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                        IconButton(onClick = { showAdvancedModal = false }, modifier = Modifier.size(36.dp)) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "بستن", tint = Color.Gray)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+
+                    // Scrollable Content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        // Section A: Final Move Cards (مدیریت کارت‌های حرکت آخر)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "🃏 مدیریت کارت‌های حرکت آخر",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF13131F))
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (lastMoveCards.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("کارتی موجود نیست.", color = TextGray, fontSize = 12.sp)
+                                    }
+                                } else {
+                                    lastMoveCards.forEach { card ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    color = if (card.isSelected) PrimaryPurple.copy(alpha = 0.08f) else Color.Transparent,
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                                .border(
+                                                    1.dp,
+                                                    if (card.isSelected) PrimaryPurple.copy(alpha = 0.2f) else BorderColor,
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .padding(10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = card.name,
+                                                    color = Color.White,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                if (card.description.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = card.description,
+                                                        color = TextGray,
+                                                        fontSize = 11.sp,
+                                                        lineHeight = 16.sp
+                                                    )
+                                                }
+                                            }
+
+                                            Switch(
+                                                checked = card.isSelected,
+                                                onCheckedChange = { onToggleLastMoveCardSelection(card.id) },
+                                                colors = SwitchDefaults.colors(
+                                                    checkedThumbColor = Color.White,
+                                                    checkedTrackColor = PrimaryPurple,
+                                                    uncheckedThumbColor = Color.Gray,
+                                                    uncheckedTrackColor = Color(0xFF1C1C2E)
+                                                ),
+                                                modifier = Modifier.testTag("toggle_card_${card.id}")
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Add Custom Card
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF13131F))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "➕ افزودن کارت حرکت آخر سفارشی",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = newCardName,
+                                            onValueChange = { newCardName = it },
+                                            placeholder = { Text("نام کارت جدید (مثلا: هیاهو 🗣️)", color = Color.Gray, fontSize = 12.sp) },
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = PrimaryPurple,
+                                                unfocusedBorderColor = BorderColor,
+                                                focusedContainerColor = Color(0xFF1E1E2E),
+                                                unfocusedContainerColor = Color(0xFF1E1E2E)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth().testTag("new_card_name_input")
+                                        )
+                                        OutlinedTextField(
+                                            value = newCardDesc,
+                                            onValueChange = { newCardDesc = it },
+                                            placeholder = { Text("توضیحات کوتاه عملکرد کارت...", color = Color.Gray, fontSize = 12.sp) },
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = PrimaryPurple,
+                                                unfocusedBorderColor = BorderColor,
+                                                focusedContainerColor = Color(0xFF1E1E2E),
+                                                unfocusedContainerColor = Color(0xFF1E1E2E)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth().testTag("new_card_desc_input")
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            if (newCardName.isNotBlank()) {
+                                                onAddLastMoveCard(newCardName, newCardDesc)
+                                                newCardName = ""
+                                                newCardDesc = ""
+                                            }
+                                        },
+                                        colors = IconButtonDefaults.iconButtonColors(containerColor = PrimaryPurple),
+                                        modifier = Modifier.size(48.dp).testTag("add_custom_card_button")
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = "افزودن کارت", tint = Color.White)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section B: Game Inquiries (مدیریت استعلام‌ها)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "🔍 مدیریت استعلام‌ها",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF13131F))
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "تعداد استعلام‌های مجاز",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "تعداد دفعاتی که راوی می‌تواند در فاز روز آمار دقیقی از جناحین کشته شده ارائه دهد.",
+                                        color = TextGray,
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = { if (totalInquiries > 0) onSetTotalInquiries(totalInquiries - 1) },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(Color(0xFF1E1E2E), CircleShape)
+                                            .border(1.dp, BorderColor, CircleShape)
+                                            .testTag("decrement_inquiry_button")
+                                    ) {
+                                        Text("−", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    }
+
+                                    Text(
+                                        text = totalInquiries.toString(),
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.testTag("inquiry_count_text")
+                                    )
+
+                                    IconButton(
+                                        onClick = { onSetTotalInquiries(totalInquiries + 1) },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(Color(0xFF1E1E2E), CircleShape)
+                                            .border(1.dp, BorderColor, CircleShape)
+                                            .testTag("increment_inquiry_button")
+                                    ) {
+                                        Text("+", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Footer
+                    Button(
+                        onClick = { showAdvancedModal = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("confirm_advanced_settings_button")
+                    ) {
+                        Text("تایید و ذخیره تنظیمات", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
