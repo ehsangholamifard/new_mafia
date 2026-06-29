@@ -17,6 +17,7 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
     val allGameSessions: Flow<List<GameSessionEntity>> = mafiaDao.getAllGameSessionsFlow()
 
     suspend fun insertGameSession(session: GameSessionEntity) = mafiaDao.insertGameSession(session)
+    suspend fun updateGameSession(session: GameSessionEntity) = mafiaDao.updateGameSession(session)
     suspend fun getGameSessionById(id: Int) = mafiaDao.getGameSessionById(id)
     suspend fun deleteGameSession(session: GameSessionEntity) = mafiaDao.deleteGameSession(session)
     suspend fun deleteGameSessionById(id: Int) = mafiaDao.deleteGameSessionById(id)

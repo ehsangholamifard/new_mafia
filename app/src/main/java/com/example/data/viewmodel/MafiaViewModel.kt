@@ -798,7 +798,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 natoWrongGuessesCount = _natoWrongGuessesCount.value,
                 musketeerLiveGunExhausted = _musketeerLiveGunExhausted.value
             )
-            repository.insertGameSession(sessionEntry)
+            if (currentId != 0) {
+                repository.updateGameSession(sessionEntry)
+            } else {
+                val savedId = repository.insertGameSession(sessionEntry)
+                _activeSessionId.value = savedId.toInt()
+            }
         }
     }
 
@@ -2505,8 +2510,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 natoWrongGuessesCount = _natoWrongGuessesCount.value,
                 musketeerLiveGunExhausted = _musketeerLiveGunExhausted.value
             )
-            val savedId = repository.insertGameSession(session)
-            if (currentId == 0) {
+            if (currentId != 0) {
+                repository.updateGameSession(session)
+            } else {
+                val savedId = repository.insertGameSession(session)
                 _activeSessionId.value = savedId.toInt()
             }
         }

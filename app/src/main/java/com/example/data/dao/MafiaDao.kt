@@ -84,6 +84,9 @@ interface MafiaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGameSession(session: GameSessionEntity): Long
 
+    @Update
+    suspend fun updateGameSession(session: GameSessionEntity)
+
     @Query("SELECT * FROM game_sessions WHERE id = :id")
     suspend fun getGameSessionById(id: Int): GameSessionEntity?
 
