@@ -1102,6 +1102,7 @@ fun SetupStageContent(
     var showPlayerModal by remember { mutableStateOf(false) }
     var showRoleModal by remember { mutableStateOf(false) }
     var showAdvancedModal by remember { mutableStateOf(false) }
+    var showSummaryModal by remember { mutableStateOf(false) }
 
     val selectedCount = remember(players) { players.filter { it.isSelected }.size }
 
@@ -1274,7 +1275,7 @@ fun SetupStageContent(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* Do nothing for now */ }
+                .clickable { showSummaryModal = true }
         ) {
             Row(
                 modifier = Modifier
@@ -2117,6 +2118,164 @@ fun SetupStageContent(
                             .testTag("confirm_advanced_settings_button")
                     ) {
                         Text("تایید و ذخیره تنظیمات", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSummaryModal) {
+        val selectedPlayersCount = players.filter { it.isSelected }.size
+        val selectedRolesCount = roles.sumOf { it.count }
+        val countsAreEqual = selectedPlayersCount == selectedRolesCount
+
+        val citizenCount = roles.filter { it.team == "Citizen" }.sumOf { it.count }
+        val mafiaCount = roles.filter { it.team == "Mafia" }.sumOf { it.count }
+        val independentCount = roles.filter { it.team == "Independent" }.sumOf { it.count }
+
+        Dialog(
+            onDismissRequest = { showSummaryModal = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Header: Title "خلاصه و تایید نهایی" and a Close (X) icon
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "خلاصه و تایید نهایی",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                        IconButton(onClick = { showSummaryModal = false }, modifier = Modifier.size(36.dp)) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "بستن", tint = Color.Gray)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+
+                    // Validation Logic (The Smart Guard)
+                    if (!countsAreEqual) {
+                        // Display warning box (Muted Red Background, AccentCrimson text/border)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF2C1E1E))
+                                .border(1.dp, AccentCrimson, RoundedCornerShape(12.dp))
+                                .padding(16.dp)
+                                .testTag("summary_warning_box")
+                        ) {
+                            Text(
+                                text = "خطا: تعداد نقش‌ها ($selectedRolesCount) با تعداد بازیکنان ($selectedPlayersCount) همخوانی ندارد. لطفاً تنظیمات را اصلاح کنید.",
+                                color = AccentCrimson,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 20.sp
+                            )
+                        }
+                    } else {
+                        // Display clean Summary Card (#141423 background, SurfaceDark is 0xFF141423)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("summary_info_card")
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("👥", fontSize = 18.sp)
+                                    Text(
+                                        text = "تعداد بازیکنان: $selectedPlayersCount نفر",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("🎭", fontSize = 18.sp)
+                                    Text(
+                                        text = "ترکیب نقش‌ها: شهروند: $citizenCount | مافیا: $mafiaCount | مستقل: $independentCount",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("🔍", fontSize = 18.sp)
+                                    Text(
+                                        text = "استعلام‌های مجاز: $totalInquiries",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Footer Start Action
+                    Button(
+                        onClick = {
+                            if (countsAreEqual) {
+                                onStartGame()
+                                showSummaryModal = false
+                            }
+                        },
+                        enabled = countsAreEqual,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (countsAreEqual) PrimaryPurple else Color(0xFF333333),
+                            disabledContainerColor = Color(0xFF333333),
+                            contentColor = Color.White,
+                            disabledContentColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("start_game_button")
+                    ) {
+                        Text(
+                            text = "شروع بازی 🚀",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
