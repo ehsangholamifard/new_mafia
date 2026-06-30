@@ -240,11 +240,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                                     if (isUnique && rObj.count >= 1) {
                                         Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        if (rObj.name.contains("ساده")) {
-                                            viewModel.updateRoleCount(roleId, rObj.count + 1)
-                                        } else {
-                                            roleToConfigureCapabilities = rObj
-                                        }
+                                        viewModel.updateRoleCount(roleId, rObj.count + 1)
                                     }
                                 }
                             },
@@ -269,7 +265,8 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onResetLastMoveCards = { viewModel.resetLastMoveCards() },
                             totalInquiries = totalInquiries,
                             onSetTotalInquiries = { viewModel.setTotalInquiries(it) },
-                            onEditAbilities = { roleToConfigureAbilities = it }
+                            onEditAbilities = { roleToConfigureAbilities = it },
+                            onConfigureCapabilities = { roleToConfigureCapabilities = it }
                         )
                         "DISTRIBUTION" -> SecretDistributionContent(
                             players = players.filter { it.isSelected },
@@ -1096,7 +1093,8 @@ fun SetupStageContent(
     onResetLastMoveCards: () -> Unit,
     totalInquiries: Int,
     onSetTotalInquiries: (Int) -> Unit,
-    onEditAbilities: (RoleEntity) -> Unit
+    onEditAbilities: (RoleEntity) -> Unit,
+    onConfigureCapabilities: (RoleEntity) -> Unit
 ) {
     var playerInputText by remember { mutableStateOf("") }
     var showPlayerModal by remember { mutableStateOf(false) }
@@ -1728,6 +1726,21 @@ fun SetupStageContent(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        // Settings/Gear icon (only for unique/special roles with capabilities)
+                                        if (isUnique) {
+                                            IconButton(
+                                                onClick = { onConfigureCapabilities(role) },
+                                                modifier = Modifier.size(32.dp).testTag("role_settings_${role.id}")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Settings,
+                                                    contentDescription = "تنظیمات نقش",
+                                                    tint = Color(0xFF94A3B8),
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+
                                         if (role.count > 0) {
                                             // Display Count Badge for multiple count roles
                                             Box(
@@ -2128,6 +2141,7 @@ fun SetupStageContent(
         val selectedPlayersCount = players.filter { it.isSelected }.size
         val selectedRolesCount = roles.sumOf { it.count }
         val countsAreEqual = selectedPlayersCount == selectedRolesCount
+        val isValid = selectedPlayersCount > 0 && countsAreEqual
 
         val citizenCount = roles.filter { it.team == "Citizen" }.sumOf { it.count }
         val mafiaCount = roles.filter { it.team == "Mafia" }.sumOf { it.count }
@@ -2171,7 +2185,26 @@ fun SetupStageContent(
                     HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
                     // Validation Logic (The Smart Guard)
-                    if (!countsAreEqual) {
+                    if (selectedPlayersCount == 0) {
+                        // Display prominent warning box (Muted Red Background)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF2C1E1E))
+                                .border(1.dp, AccentCrimson, RoundedCornerShape(12.dp))
+                                .padding(16.dp)
+                                .testTag("summary_warning_box")
+                        ) {
+                            Text(
+                                text = "لطفاً بازیکنان و نقش‌ها را اضافه کنید. الان هیچ بازیکنی وجود ندارد.",
+                                color = AccentCrimson,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 20.sp
+                            )
+                        }
+                    } else if (!countsAreEqual) {
                         // Display warning box (Muted Red Background, AccentCrimson text/border)
                         Box(
                             modifier = Modifier
@@ -2253,14 +2286,14 @@ fun SetupStageContent(
                     // Footer Start Action
                     Button(
                         onClick = {
-                            if (countsAreEqual) {
+                            if (isValid) {
                                 onStartGame()
                                 showSummaryModal = false
                             }
                         },
-                        enabled = countsAreEqual,
+                        enabled = isValid,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (countsAreEqual) PrimaryPurple else Color(0xFF333333),
+                            containerColor = if (isValid) PrimaryPurple else Color(0xFF333333),
                             disabledContainerColor = Color(0xFF333333),
                             contentColor = Color.White,
                             disabledContentColor = Color.Gray
@@ -10020,7 +10053,7 @@ fun RoleCapabilitiesConfigDialog(
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)),
             border = BorderStroke(1.dp, BorderColor),
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier
@@ -10039,13 +10072,6 @@ fun RoleCapabilitiesConfigDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "تنظیم قابلیت‌های ${role.name} 🎭",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 14.sp
-                    )
-                    
                     val teamLabel = when(role.team) {
                         "Citizen" -> "شهروند 🕊️"
                         "Mafia" -> "مافیا 🕶️"
@@ -10056,6 +10082,8 @@ fun RoleCapabilitiesConfigDialog(
                         "Mafia" -> AccentCrimson
                         else -> AccentGold
                     }
+                    
+                    // Left side of Header: Team Badge
                     Text(
                         text = teamLabel,
                         color = teamColor,
@@ -10065,21 +10093,50 @@ fun RoleCapabilitiesConfigDialog(
                             .background(teamColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
+
+                    // Right side of Header: Role Name with its Icon
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = role.name,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color(0xFF141423), CircleShape)
+                                .border(1.dp, BorderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (role.iconName.isNotBlank()) role.iconName else "🎭",
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
                 }
 
                 if (role.description.isNotBlank()) {
-                    Text(
-                        text = role.description,
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
+                    Box(
                         modifier = Modifier
-                            .background(Color(0xFF0F0F1A), RoundedCornerShape(10.dp))
+                            .fillMaxWidth()
+                            .background(Color(0xFF141423), RoundedCornerShape(10.dp))
                             .padding(10.dp)
-                    )
+                    ) {
+                        Text(
+                            text = role.description,
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
                 }
 
-                HorizontalDivider(color = BorderColor)
+                HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
 
                 // Scrollable container for capabilities list (flex-grow: 1; overflow-y: auto)
                 Column(
@@ -10108,12 +10165,52 @@ fun RoleCapabilitiesConfigDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            // Left side: Switch & Counter Controls
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Checkbox(
+                                if (capCount > 0) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                if (capCount > 1) {
+                                                    selectedCaps = selectedCaps + (capName to (capCount - 1))
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(Color(0xFF141423), CircleShape)
+                                                .border(1.dp, BorderColor, CircleShape)
+                                        ) {
+                                            Text("−", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Text(
+                                            text = capCount.toString(),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            modifier = Modifier.width(18.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                selectedCaps = selectedCaps + (capName to (capCount + 1))
+                                            },
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(Color(0xFF141423), CircleShape)
+                                                .border(1.dp, BorderColor, CircleShape)
+                                        ) {
+                                            Text("+", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                Switch(
                                     checked = capCount > 0,
                                     onCheckedChange = { checked ->
                                         selectedCaps = if (checked) {
@@ -10122,52 +10219,19 @@ fun RoleCapabilitiesConfigDialog(
                                             selectedCaps - capName
                                         }
                                     },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = AccentGold,
-                                        uncheckedColor = Color.Gray
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = PrimaryPurple,
+                                        uncheckedThumbColor = Color.Gray,
+                                        uncheckedTrackColor = Color(0xFF13131F)
                                     )
                                 )
-                                Text(text = capName, color = Color.White, fontSize = 11.sp)
                             }
 
-                            if (capCount > 0) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = {
-                                            if (capCount > 1) {
-                                                selectedCaps = selectedCaps + (capName to (capCount - 1))
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .background(Color(0xFF1E1E2F), CircleShape)
-                                    ) {
-                                        Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    Text(
-                                        text = capCount.toString(),
-                                        color = AccentGold,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.width(16.dp),
-                                        textAlign = TextAlign.Center
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            selectedCaps = selectedCaps + (capName to (capCount + 1))
-                                        },
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .background(Color(0xFF1E1E2F), CircleShape)
-                                    ) {
-                                        Text("+", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
+                            // Right side: Cap Name Text strictly RTL
+                            Text(text = capName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
+                        HorizontalDivider(color = BorderColor.copy(alpha = 0.2f))
                     }
 
                     // Add Custom capability section right here inside the dialog scroll area
@@ -10187,8 +10251,10 @@ fun RoleCapabilitiesConfigDialog(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedBorderColor = AccentGold,
-                                unfocusedBorderColor = BorderColor
+                                focusedBorderColor = PrimaryPurple,
+                                unfocusedBorderColor = BorderColor,
+                                focusedContainerColor = Color(0xFF141423),
+                                unfocusedContainerColor = Color(0xFF141423)
                             ),
                             modifier = Modifier.weight(1f)
                         )
@@ -10202,9 +10268,9 @@ fun RoleCapabilitiesConfigDialog(
                             },
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(AccentGold, RoundedCornerShape(8.dp))
+                                .background(PrimaryPurple, RoundedCornerShape(8.dp))
                         ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "اضافه کردن", tint = BackgroundDark)
+                            Icon(imageVector = Icons.Default.Add, contentDescription = "اضافه کردن", tint = Color.White)
                         }
                     }
                 }
@@ -10213,27 +10279,45 @@ fun RoleCapabilitiesConfigDialog(
                 HorizontalDivider(color = BorderColor.copy(alpha = 0.3f))
 
                 // Fixed footer container for action buttons (NEVER scroll)
-                Button(
-                    onClick = {
-                        val capsList = selectedCaps.map { (capName, count) ->
-                            RoleCapability(name = capName, totalCount = count, remainingCount = count)
-                        }
-                        val capsJson = Json.encodeToString(capsList)
-                        onConfirm(role.id, capsJson)
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGold, contentColor = BackgroundDark),
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("ذخیره و اضافه کردن نقش به بازی 🎯", fontWeight = FontWeight.Bold)
-                }
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFFEF4444)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Text("انصراف", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
 
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("انصراف")
+                    Button(
+                        onClick = {
+                            val capsList = selectedCaps.map { (capName, count) ->
+                                RoleCapability(name = capName, totalCount = count, remainingCount = count)
+                            }
+                            val capsJson = Json.encodeToString(capsList)
+                            onConfirm(role.id, capsJson)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryPurple,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1.5f)
+                            .height(48.dp)
+                    ) {
+                        Text("ذخیره و تایید", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
                 }
             }
         }
