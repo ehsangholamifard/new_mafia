@@ -65,7 +65,7 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     name = "حرفه‌ای 🔫",
                     description = "تیرانداز شهروندان. اگر به مافیا شلیک کند او کشته می‌شود، وگرنه خودش حذف می‌شود",
                     team = "Citizen",
-                    capabilitiesJson = """[{"name":"شلیک شبانه 🔫","totalCount":2,"remainingCount":2}]"""
+                    capabilitiesJson = """[{"name":"شلیک شبانه 🔫","totalCount":2,"remainingCount":2},{"name":"سلاخی 🔪","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
                     name = "تفنگدار 🪖",
@@ -119,7 +119,7 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     name = "رئیس مافیا (پدرخوانده) 👑",
                     description = "رهبر گروه مافیا که استعلام او برای کارآگاه همیشه منفی (شهروند) است و فرمان شلیک شب را صادر میکند و دارای قابلیت خریداری (مذاکره) است",
                     team = "Mafia",
-                    capabilitiesJson = """[{"name":"شلیک شبانه مافیا 💀","totalCount":10,"remainingCount":10},{"name":"خریداری (مذاکره) 🤝","totalCount":1,"remainingCount":1}]"""
+                    capabilitiesJson = """[{"name":"شلیک شبانه مافیا 💀","totalCount":10,"remainingCount":10},{"name":"خریداری (مذاکره) 🤝","totalCount":1,"remainingCount":1},{"name":"سلاخی 🔪","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
                     name = "دکتر لکتور 💊",

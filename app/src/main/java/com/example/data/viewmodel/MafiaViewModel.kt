@@ -190,7 +190,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Preset capabilities
     private val _capabilityTemplates = MutableStateFlow(
-        listOf("استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣")
+        listOf("استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "سلاخی 🔪", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣")
     )
     val capabilityTemplates: StateFlow<List<String>> = _capabilityTemplates.asStateFlow()
 
@@ -263,6 +263,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deletePlayer(player)
             repository.addLog("بازیکن حذف شد: ${player.name}")
+        }
+    }
+
+    fun updatePlayer(player: PlayerEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updatePlayer(player)
         }
     }
 
@@ -380,7 +386,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetCapabilityTemplatesToDefaults() {
         _capabilityTemplates.value = listOf(
-            "استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣"
+            "استعلام وضعیت 🔍", "شفا / نجات 🩺", "شلیک شبانه 🔫", "سلاخی 🔪", "تفنگ جنگی ⚔️", "تفنگ مشقی 🔫", "سکوت فردا 🔇", "محافظ زره 🛡️", "خریداری (مذاکره) 🤝", "انفجار انتحاری 💣"
         )
     }
 

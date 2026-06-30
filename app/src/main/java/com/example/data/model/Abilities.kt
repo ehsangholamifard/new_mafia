@@ -160,7 +160,7 @@ fun getRoleAbilities(roleId: String): List<String> {
         normalized.contains("هکر") || normalized.contains("hacker") || normalized.contains("hack") -> listOf("HACK")
         normalized.contains("دکتر") || normalized.contains("doctor") || normalized.contains("lector") || normalized.contains("لکتور") -> listOf("HEAL")
         normalized.contains("تفنگدار") || normalized.contains("musketeer") -> listOf("GIVE_GUN")
-        normalized.contains("پدرخوانده") || normalized.contains("godfather") || normalized.contains("حرفه‌ای") || normalized.contains("sniper") || normalized.contains("professional") -> listOf("SHOOT")
+        normalized.contains("پدرخوانده") || normalized.contains("godfather") || normalized.contains("حرفه‌ای") || normalized.contains("sniper") || normalized.contains("professional") -> listOf("SHOOT", "SLAUGHTER")
         normalized.contains("خریدار") || normalized.contains("مذاکره") || normalized.contains("buyer") -> listOf("RECRUIT")
         normalized.contains("کین") || normalized.contains("kane") -> listOf("REVEAL_MAFIA")
         normalized.contains("کنستانتین") || normalized.contains("constantine") -> listOf("REVIVE")

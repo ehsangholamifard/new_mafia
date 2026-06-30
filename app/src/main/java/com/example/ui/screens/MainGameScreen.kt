@@ -233,6 +233,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onAddPlayer = { viewModel.addPlayer(it) },
                             onTogglePlayer = { viewModel.togglePlayerSelection(it) },
                             onDeletePlayer = { viewModel.deletePlayer(it) },
+                            onUpdatePlayer = { viewModel.updatePlayer(it) },
                             onIncrementRole = { roleId ->
                                 val rObj = roles.find { it.id == roleId }
                                 if (rObj != null) {
@@ -1080,6 +1081,7 @@ fun SetupStageContent(
     onAddPlayer: (String) -> Unit,
     onTogglePlayer: (Int) -> Unit,
     onDeletePlayer: (PlayerEntity) -> Unit,
+    onUpdatePlayer: (PlayerEntity) -> Unit,
     onIncrementRole: (Int) -> Unit,
     onDecrementRole: (Int) -> Unit,
     onResetRoles: () -> Unit,
@@ -1101,6 +1103,8 @@ fun SetupStageContent(
     var showRoleModal by remember { mutableStateOf(false) }
     var showAdvancedModal by remember { mutableStateOf(false) }
     var showSummaryModal by remember { mutableStateOf(false) }
+    var editingPlayer by remember { mutableStateOf<PlayerEntity?>(null) }
+    var editedNameText by remember { mutableStateOf("") }
 
     val selectedCount = remember(players) { players.filter { it.isSelected }.size }
 
@@ -1479,10 +1483,10 @@ fun SetupStageContent(
                                             colors = CheckboxDefaults.colors(checkedColor = PrimaryPurple)
                                         )
 
-                                        val context = LocalContext.current
                                         IconButton(
                                             onClick = {
-                                                Toast.makeText(context, "امکان ویرایش نام بازیکن در به‌روزرسانی بعدی افزوده می‌شود.", Toast.LENGTH_SHORT).show()
+                                                editingPlayer = player
+                                                editedNameText = player.name
                                             },
                                             modifier = Modifier.size(36.dp)
                                         ) {
@@ -1525,6 +1529,81 @@ fun SetupStageContent(
                 }
             }
         }
+    }
+
+    if (editingPlayer != null) {
+        AlertDialog(
+            onDismissRequest = { editingPlayer = null },
+            containerColor = Color(0xFF1E1E2E),
+            shape = RoundedCornerShape(18.dp),
+            title = {
+                Text(
+                    text = "ویرایش نام بازیکن",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Right,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = editedNameText,
+                    onValueChange = { editedNameText = it },
+                    placeholder = { Text("نام بازیکن...", fontSize = 13.sp, color = Color.Gray) },
+                    maxLines = 1,
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = PrimaryPurple,
+                        unfocusedBorderColor = BorderColor,
+                        focusedContainerColor = Color(0xFF141423),
+                        unfocusedContainerColor = Color(0xFF141423)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editedNameText.isNotBlank()) {
+                            onUpdatePlayer(editingPlayer!!.copy(name = editedNameText.trim()))
+                            editingPlayer = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryPurple,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "ذخیره",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { editingPlayer = null },
+                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFFEF4444)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "انصراف",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        )
     }
 
     if (showRoleModal) {
@@ -2733,53 +2812,18 @@ fun PlayStageContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (phase == "Day") {
-            // Step 1: Redesigned Header Section (Professional Brand Container)
+            // Step 1: Compact Top Section for Day Phase (No Crown, No "گرداننده مافیا", No subtitle)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Golden gradient Crown icon
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(Color(0xFFFFF9C4), Color(0xFFFFD700), Color(0xFFFFA000))
-                            ),
-                            shape = CircleShape
-                        )
-                        .shadow(8.dp, CircleShape, spotColor = Color(0xFFFFD700), ambientColor = Color(0xFFFFD700)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("👑", fontSize = 28.sp)
-                }
-                
-                // "گرداننده مافیا" with a purple gradient brush
-                Text(
-                    text = "گرداننده مافیا",
-                    style = TextStyle(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(Color(0xFFCE93D8), Color(0xFFBA68C8), Color(0xFF8E24AA))
-                        ),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                )
-                
-                Text(
-                    text = "ابزار حرفه‌ای مدیریت بازی",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 2.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -2789,85 +2833,83 @@ fun PlayStageContent(
                     Text(
                         text = "روز $currentRound ☀️",
                         color = AccentGold,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-            }
 
-            // Digital Timer: Prominent centered timer
-            val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(vertical = 1.dp)
-                    .size(74.dp)
-                    .background(Color(0xFF141324), CircleShape)
-                    .border(1.5.dp, PrimaryPurple, CircleShape)
-                    .then(
-                        Modifier.shadow(4.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
-                    )
-                    .clickable { onShowTimerModalChange(true) },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                // Compact Digital Timer (Shrunk UI and text sizes)
+                val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .background(Color(0xFF141324), CircleShape)
+                        .border(1.2.dp, PrimaryPurple, CircleShape)
+                        .then(
+                            Modifier.shadow(2.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                        )
+                        .clickable { onShowTimerModalChange(true) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        Text(
+                            text = formattedTime,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "باقیمانده",
+                            color = TextGray,
+                            fontSize = 7.sp
+                        )
+                    }
+                }
+
+                // End Phase (پایان مرحله) button (reduced height and spacing)
+                Button(
+                    onClick = {
+                        showEndDayConfirmationDialog = true
+                    },
+                    enabled = isVotingCompleted,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFF23232C)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .background(
+                            brush = if (!isVotingCompleted) {
+                                Brush.horizontalGradient(colors = listOf(Color(0xFF23232C), Color(0xFF1C1C22)))
+                            } else {
+                                Brush.horizontalGradient(colors = listOf(PrimaryPurple, Color(0xFF3F51B5)))
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        )
                 ) {
                     Text(
-                        text = formattedTime,
-                        color = Color.White,
-                        fontSize = 17.sp,
+                        text = "پایان مرحله (شروع شب) 🌙",
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = "باقیمانده",
-                        color = TextGray,
-                        fontSize = 8.sp
+                        fontSize = 11.sp,
+                        color = if (!isVotingCompleted) Color.Gray else Color.White
                     )
                 }
             }
 
-            // Step 4: End Phase (پایان مرحله) button
-            Button(
-                onClick = {
-                    showEndDayConfirmationDialog = true
-                },
-                enabled = isVotingCompleted,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFF23232C)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .background(
-                        brush = if (!isVotingCompleted) {
-                            Brush.horizontalGradient(colors = listOf(Color(0xFF23232C), Color(0xFF1C1C22)))
-                        } else {
-                            Brush.horizontalGradient(colors = listOf(PrimaryPurple, Color(0xFF3F51B5)))
-                        },
-                        shape = RoundedCornerShape(14.dp)
-                    )
-            ) {
-                Text(
-                    text = "پایان مرحله (شروع شب) 🌙",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = if (!isVotingCompleted) Color.Gray else Color.White
-                )
-            }
-
-            // Stats summary band
+            // Stats summary band (reduced vertical padding)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SurfaceDark, RoundedCornerShape(10.dp))
                     .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -10162,10 +10204,20 @@ fun RoleCapabilitiesConfigDialog(
                         val capCount = selectedCaps[capName] ?: 0
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Left side: Switch & Counter Controls
+                            // Right side (Start in RTL): Capability Name Text
+                            Text(
+                                text = capName,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // Middle: Spacer to push everything else to the left
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            // Left side (End in RTL): Controls (Switch & Counter)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -10175,6 +10227,30 @@ fun RoleCapabilitiesConfigDialog(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        // Circular "+" button (Start/Right of counter cluster)
+                                        IconButton(
+                                            onClick = {
+                                                selectedCaps = selectedCaps + (capName to (capCount + 1))
+                                            },
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(Color(0xFF141423), CircleShape)
+                                                .border(1.dp, BorderColor, CircleShape)
+                                        ) {
+                                            Text("+", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        // Centered text
+                                        Text(
+                                            text = capCount.toString(),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            modifier = Modifier.width(18.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        // Circular "-" button (End/Left of counter cluster)
                                         IconButton(
                                             onClick = {
                                                 if (capCount > 1) {
@@ -10187,25 +10263,6 @@ fun RoleCapabilitiesConfigDialog(
                                                 .border(1.dp, BorderColor, CircleShape)
                                         ) {
                                             Text("−", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        Text(
-                                            text = capCount.toString(),
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            modifier = Modifier.width(18.dp),
-                                            textAlign = TextAlign.Center
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                selectedCaps = selectedCaps + (capName to (capCount + 1))
-                                            },
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .background(Color(0xFF141423), CircleShape)
-                                                .border(1.dp, BorderColor, CircleShape)
-                                        ) {
-                                            Text("+", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -10227,9 +10284,6 @@ fun RoleCapabilitiesConfigDialog(
                                     )
                                 )
                             }
-
-                            // Right side: Cap Name Text strictly RTL
-                            Text(text = capName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         HorizontalDivider(color = BorderColor.copy(alpha = 0.2f))
                     }
