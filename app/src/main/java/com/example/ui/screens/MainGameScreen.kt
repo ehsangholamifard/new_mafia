@@ -6917,6 +6917,13 @@ fun DayPlayerCard(
                             borderColor = Color(0xFFF59E0B)
                         )
                     }
+                    if (player.isVoteRevoked) {
+                        DynamicStatusIcon(
+                            emoji = "❌",
+                            bgColor = Color(0xFFEF4444).copy(alpha = 0.15f),
+                            borderColor = Color(0xFFEF4444)
+                        )
+                    }
                     if ((player.hasLiveGunThisRound && !player.usedLiveGun) || player.hasCombatGun || player.hasBlankGun) {
                         DynamicStatusIcon(
                             emoji = "🔫",
