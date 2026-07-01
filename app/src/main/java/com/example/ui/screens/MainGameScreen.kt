@@ -1784,6 +1784,18 @@ fun SetupStageContent(
                                             if (role.count > 0) PrimaryPurple.copy(alpha = 0.3f) else BorderColor,
                                             RoundedCornerShape(8.dp)
                                         )
+                                        .clickable {
+                                            val isChecked = !(role.count > 0)
+                                            if (isChecked) {
+                                                if (isUniqueAndMaxed) {
+                                                    Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    onIncrementRole(role.id)
+                                                }
+                                            } else {
+                                                onDecrementRole(role.id)
+                                            }
+                                        }
                                         .padding(8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
@@ -1872,20 +1884,13 @@ fun SetupStageContent(
                                             }
                                         }
 
-                                        Checkbox(
+                                        Switch(
                                             checked = role.count > 0,
-                                            onCheckedChange = { isChecked ->
-                                                if (isChecked) {
-                                                    if (isUniqueAndMaxed) {
-                                                        Toast.makeText(context, "از این نقش فقط یک عدد میتواند در بازی حضور داشته باشد.", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        onIncrementRole(role.id)
-                                                    }
-                                                } else {
-                                                    onDecrementRole(role.id)
-                                                }
-                                            },
-                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryPurple),
+                                            onCheckedChange = null,
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color(0xFFBB86FC),
+                                                checkedTrackColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                                            ),
                                             modifier = Modifier.testTag("role_toggle_${role.id}")
                                         )
                                     }
@@ -2909,18 +2914,14 @@ fun PlayStageContent(
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Transparent,
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFF23232C)
+                        contentColor = Color.White
                     ),
+                    border = BorderStroke(1.dp, Color(0xFFBB86FC)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(40.dp)
                         .background(
-                            brush = if (!isVotingCompleted) {
-                                Brush.horizontalGradient(colors = listOf(Color(0xFF23232C), Color(0xFF1C1C22)))
-                            } else {
-                                Brush.horizontalGradient(colors = listOf(PrimaryPurple, Color(0xFF3F51B5)))
-                            },
+                            brush = Brush.horizontalGradient(colors = listOf(Color(0xFF3700B3), Color(0xFF4F378B))),
                             shape = RoundedCornerShape(10.dp)
                         )
                 ) {
@@ -2928,7 +2929,7 @@ fun PlayStageContent(
                         text = "پایان مرحله (شروع شب) 🌙",
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                        color = if (!isVotingCompleted) Color.Gray else Color.White
+                        color = Color.White
                     )
                 }
             }
