@@ -7123,7 +7123,7 @@ fun PlayerLiveCard(
                         BadgeLabel(text = "💀 کشته روز", bgColor = Color(0xFF3B1F23), txtColor = Color(0xFFEF5350))
                     }
                     if (player.isVoteRevoked) {
-                        BadgeLabel(text = "بدون حق رأی ❌", bgColor = Color(0xFF3B1F2A), txtColor = Color(0xFFE57373))
+                        BadgeLabel(text = "سلب رای", bgColor = Color(0xFF2C1C12), txtColor = Color(0xFFFF9800))
                     }
                     if (isInDefense && phase == "Day") {
                         BadgeLabel(text = "دفاع ⚖️", bgColor = Color(0xFF4D1D16), txtColor = Color(0xFFFFB300))
