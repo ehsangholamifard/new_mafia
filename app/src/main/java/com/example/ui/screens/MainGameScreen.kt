@@ -2808,6 +2808,7 @@ fun PlayStageContent(
     var showNewNightSummaryDialog by remember { mutableStateOf(false) }
     var showInquiryPromptDialog by remember { mutableStateOf(false) }
     var showEndDayConfirmationDialog by remember { mutableStateOf(false) }
+    var showSkipVotingDialog by remember { mutableStateOf(false) }
     var showDayStatsDialog by remember { mutableStateOf(false) }
     var showNightReportDialog by remember { mutableStateOf(false) }
     var showGameOverDialog by remember { mutableStateOf(false) }
@@ -2899,9 +2900,12 @@ fun PlayStageContent(
                 // End Phase (پایان مرحله) button (reduced height and spacing)
                 Button(
                     onClick = {
-                        showEndDayConfirmationDialog = true
+                        if (isVotingCompleted) {
+                            showEndDayConfirmationDialog = true
+                        } else {
+                            showSkipVotingDialog = true
+                        }
                     },
-                    enabled = isVotingCompleted,
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Transparent,
@@ -6586,6 +6590,28 @@ fun PlayStageContent(
                 }
             }
         }
+    }
+
+    if (showSkipVotingDialog) {
+        AlertDialog(
+            onDismissRequest = { showSkipVotingDialog = false },
+            title = { Text("ورود به شب بدون رایگیری", color = Color.White) },
+            text = { Text("رایگیری انجام نشده است. آیا مطمئن هستید که میخواهید مستقیماً وارد فاز شب شوید؟", color = Color.LightGray) },
+            containerColor = Color(0xFF1E1E2E), // Dark theme
+            confirmButton = {
+                TextButton(onClick = { 
+                    showSkipVotingDialog = false
+                    onTogglePhase()
+                }) {
+                    Text("بله، شروع شب", color = Color(0xFFBB86FC))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSkipVotingDialog = false }) {
+                    Text("انصراف", color = Color.Gray)
+                }
+            }
+        )
     }
 
     if (showVotingDialog) {
