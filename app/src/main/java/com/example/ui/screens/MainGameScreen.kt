@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import android.app.Activity
@@ -136,6 +137,10 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         var shooterForLiveGun by remember { mutableStateOf<PlayerEntity?>(null) }
         var targetResultForLiveGun by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+        val snackbarHostState = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+        var previousPlayerStateForUndo by remember { mutableStateOf<PlayerEntity?>(null) }
+
         // --- Terrorist Custom Day-phase Reaction State ---
         var showTerroristSelectionDialog by remember { mutableStateOf<PlayerEntity?>(null) }
         var showTerrorAlertMessage by remember { mutableStateOf<String?>(null) }
@@ -209,6 +214,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onExportImport = { showExportImportDialog = true }
                         )
                     },
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
                     containerColor = BackgroundDark,
                     modifier = Modifier.fillMaxSize()
                 ) { paddingValues ->
@@ -386,12 +392,32 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                 // Selected Player Quick Settings Dialog
                 val currentPlayerSettings = selectedPlayerSettings
                 if (currentPlayerSettings != null) {
+                    // Backup player state when opening settings modal for Undo capability
+                    LaunchedEffect(currentPlayerSettings.id) {
+                        previousPlayerStateForUndo = currentPlayerSettings
+                    }
+
                     PlayerSettingsDialog(
                         player = currentPlayerSettings,
                         capabilityTemplates = capabilityTemplates,
                         phase = phase,
                         lastMoveCards = lastMoveCards,
                         onDismiss = { viewModel.selectPlayerForSettings(null) },
+                        onSaveSettings = {
+                            scope.launch {
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "تنظیمات بازیکن با موفقیت ذخیره شد.",
+                                    actionLabel = "بازگشت ↩️",
+                                    duration = SnackbarDuration.Long
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    previousPlayerStateForUndo?.let { backup ->
+                                        viewModel.updatePlayer(backup)
+                                    }
+                                }
+                            }
+                        },
                         onUpdateNote = { id, note -> viewModel.updatePlayerNote(id, note) },
                         onUseCapability = { id, name ->
                             val pName = currentPlayerSettings.name
@@ -7358,6 +7384,7 @@ fun PlayerSettingsDialog(
     lastMoveCards: List<LastMoveCard>,
     onDismiss: () -> Unit,
     onUpdateNote: (Int, String) -> Unit,
+    onSaveSettings: () -> Unit = {},
     onUseCapability: (Int, String) -> Unit,
     onToggleLastMove: (Int) -> Unit,
     onBurnLastMoveCard: (Int) -> Unit,
@@ -7404,6 +7431,7 @@ fun PlayerSettingsDialog(
 
     val handleDismiss = {
         onUpdateNote(player.id, noteText)
+        onSaveSettings()
         onDismiss()
     }
 
@@ -7426,47 +7454,77 @@ fun PlayerSettingsDialog(
             ) {
                 // Header Player Info
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "تنظیمات پیشرفته «${player.name}» ⚙️",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Right
-                        )
-                        Text(
-                            text = "نقش: ${player.assignedRoleName ?: "نامشخص"} | جناح: ${
-                                when (player.assignedRoleTeam) {
-                                    "Mafia" -> "مافیا"
-                                    "Citizen" -> "شهروند"
-                                    else -> "مستقل"
-                                }
-                            }",
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = player.name,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                textAlign = TextAlign.Right
+                            )
+
+                            val teamLabel = when (player.assignedRoleTeam) {
+                                "Mafia" -> "مافیا"
+                                "Citizen" -> "شهروند"
+                                else -> "مستقل"
+                            }
+                            val badgeColor = when (player.assignedRoleTeam) {
+                                "Mafia" -> AccentCrimson
+                                "Citizen" -> AccentCitizen
+                                else -> AccentGold
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .background(badgeColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, badgeColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "${player.assignedRoleName ?: "نامشخص"} • $teamLabel",
+                                    color = badgeColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     HorizontalDivider(color = BorderColor)
                 }
 
                 // Section 1: Note editor
                 item {
-                    Text(text = "یادداشت‌های ویژه راوی (گاد):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "یادداشت راوی",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     OutlinedTextField(
                         value = noteText,
-                        onValueChange = {
-                            noteText = it
-                        },
-                        placeholder = { Text("مثلاً: استعلام منفی شد یا شلیکش خطا رفت...", fontSize = 11.sp) },
+                        onValueChange = { noteText = it },
+                        placeholder = { Text("مثلاً: استعلام منفی شد یا شلیکش خطا رفت...", fontSize = 11.sp, color = Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = AccentGold,
-                            unfocusedBorderColor = BorderColor
+                            focusedBorderColor = PrimaryPurple,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF141423),
+                            unfocusedContainerColor = Color(0xFF141423)
                         ),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -9037,45 +9095,6 @@ fun PlayerSettingsDialog(
                     }
                 }
 
-                // Section 3: Interactive Votes Counter in Day
-                item {
-                    Text(text = "تعداد آرای مأخوذه بازیکن در روز جاری 🗳️:", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { onUpdateVotes(player.id, player.voteCount - 1) },
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(Color(0xFF1F1F2F), CircleShape)
-                        ) {
-                            Text("−", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-
-                        Text(
-                            text = "${player.voteCount} رأی کتبی/شَفاهی",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f),
-                            textAlign = TextAlign.Center
-                        )
-
-                        IconButton(
-                            onClick = { onUpdateVotes(player.id, player.voteCount + 1) },
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(Color(0xFF1F1F2F), CircleShape)
-                        ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "افزایش رأی", tint = Color.White)
-                        }
-                    }
-                }
-
                 // Section 4: Cards control
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -9111,77 +9130,114 @@ fun PlayerSettingsDialog(
                     }
                 }
 
-                // Section 5: Warnings & Disciplinary Points (up to 3)
+                // Section 5: Disciplinary Section (Strict RTL)
                 item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "⚠️ تعداد اخطارهای منضبطی بازیکن (${player.warningsCount} از ۳):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        (0..3).forEach { rating ->
-                            FilterChip(
-                                selected = player.warningsCount == rating,
-                                onClick = { onUpdateWarnings(player.id, rating) },
-                                label = { Text("$rating اخطار", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = if (rating > 0) AccentCrimson else Color(0xFF66BB6A),
-                                    selectedLabelColor = Color.White,
-                                    containerColor = Color(0xFF1B1B2A),
-                                    labelColor = Color.Gray
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
+                        Text(
+                            text = "مدیریت انضباطی بازیکن 🛡️",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Right
+                        )
 
-                // Section 5.5: Disciplinary Mute & Vote Revoke
-                item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "🛡️ محرومیت‌های انضباطیِ موقت (فقط برای فردا/امروز):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                        // Warnings (اخطارها): Replace with 3 stylized circular chips.
                         Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(if (player.isMuted) Color(0xFF2C2C1F) else Color(0xFF1B1B2A), RoundedCornerShape(8.dp))
-                                .border(1.dp, if (player.isMuted) AccentGold else Color.Transparent, RoundedCornerShape(8.dp))
-                                .clickable { onToggleMute(player.id) }
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("سکوت انضباطی 🔇", fontSize = 10.sp, color = if (player.isMuted) AccentGold else Color.LightGray)
-                            Checkbox(
+                            Text(
+                                text = "اخطارها",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                (1..3).forEach { index ->
+                                    val isActive = player.warningsCount >= index
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                color = if (isActive) Color(0xFFFF9800) else Color(0xFF141423),
+                                                shape = CircleShape
+                                            )
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isActive) Color(0xFFFF9800) else Color(0xFF3F3F5F),
+                                                shape = CircleShape
+                                            )
+                                            .clickable {
+                                                val newWarnings = if (player.warningsCount == index) index - 1 else index
+                                                onUpdateWarnings(player.id, newWarnings)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = index.toString(),
+                                            color = if (isActive) Color.White else Color.Gray,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Silence (سکوت انضباطی): Switch component.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "سکوت انضباطی",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Switch(
                                 checked = player.isMuted,
-                                onCheckedChange = null,
-                                colors = CheckboxDefaults.colors(checkedColor = AccentGold),
-                                modifier = Modifier.size(24.dp)
+                                onCheckedChange = { onToggleMute(player.id) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFFFF9800),
+                                    uncheckedThumbColor = Color.Gray,
+                                    uncheckedTrackColor = Color(0xFF141423)
+                                )
                             )
                         }
 
+                        // Vote-Ban (سلب حق رای): Switch component.
                         Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(if (player.isVoteRevoked) Color(0xFF2C1C24) else Color(0xFF1B1B2A), RoundedCornerShape(8.dp))
-                                .border(1.dp, if (player.isVoteRevoked) AccentCrimson else Color.Transparent, RoundedCornerShape(8.dp))
-                                .clickable { onToggleVoteRevoked(player.id) }
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("سلب حق رأی ❌", fontSize = 10.sp, color = if (player.isVoteRevoked) AccentCrimson else Color.LightGray)
-                            Checkbox(
+                            Text(
+                                text = "سلب حق رای",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Switch(
                                 checked = player.isVoteRevoked,
-                                onCheckedChange = null,
-                                colors = CheckboxDefaults.colors(checkedColor = AccentCrimson),
-                                modifier = Modifier.size(24.dp)
+                                onCheckedChange = { onToggleVoteRevoked(player.id) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFFEF4444),
+                                    uncheckedThumbColor = Color.Gray,
+                                    uncheckedTrackColor = Color(0xFF141423)
+                                )
                             )
                         }
                     }
@@ -9263,71 +9319,86 @@ fun PlayerSettingsDialog(
                 // Section 6: Kill & Revive with specific reasons
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "💀 مدیریت حیات و تعیین دقیق دلیل خروج/نجات:", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-
                     if (player.isAlive) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1F1315), RoundedCornerShape(10.dp))
-                                .border(1.dp, AccentCrimson.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                                .padding(10.dp)
+                        Text(
+                            text = "مدیریت خروج از بازی",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Right
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("انتخاب علت حذف بازیکن از سناریو (مرگ قطعی):", color = TextSecondary, fontSize = 10.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Button(
-                                    onClick = { onEliminateWithReason(player.id, "VOTE") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF421E23)),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("۱. رأی‌گیری ⚖️", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = { onEliminateWithReason(player.id, "DISCIPLINARY") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF421E23)),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("۲. انضباطی 🛑", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = { onEliminateWithReason(player.id, "LOGICAL") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF421E23)),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("۳. منطقی 🎯", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
+                            OutlinedButton(
+                                onClick = { onEliminateWithReason(player.id, "VOTE") },
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text("رأی‌گیری ⚖️", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { onEliminateWithReason(player.id, "DISCIPLINARY") },
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text("انضباطی 🛑", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { onEliminateWithReason(player.id, "LOGICAL") },
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text("منطقی 🎯", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF121F17), RoundedCornerShape(10.dp))
-                                .border(1.dp, AccentCitizen.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                                .padding(10.dp)
+                        Text(
+                            text = "مدیریت بازگشت به بازی",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Right
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("انتخاب دلیل احیا و بازگرداندن بازیکن به بازی:", color = TextSecondary, fontSize = 10.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { onReviveWithReason(player.id, "RETURN") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF183821)),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("۱. برگشت به سناریو 🤝", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = { onReviveWithReason(player.id, "RESURRECT") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF183821)),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("۲. زنده شدن 🩺", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
+                            OutlinedButton(
+                                onClick = { onReviveWithReason(player.id, "RETURN") },
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text("برگشت به سناریو 🤝", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { onReviveWithReason(player.id, "RESURRECT") },
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text("زنده شدن 🩺", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -9335,13 +9406,25 @@ fun PlayerSettingsDialog(
 
                 // Dismiss Controls
                 item {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = handleDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("بستن و ذخیره نهایی 💾", fontWeight = FontWeight.Bold)
+                        Text("تایید و ذخیره نهایی 💾", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        TextButton(
+                            onClick = onDismiss
+                        ) {
+                            Text("انصراف", color = Color.Gray, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
