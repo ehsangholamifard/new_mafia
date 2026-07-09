@@ -1859,6 +1859,16 @@ fun SetupStageContent(
                                         }
 
                                         if (role.count > 0) {
+                                            // Minus button for multiple count roles
+                                            if (!isUnique) {
+                                                IconButton(
+                                                    onClick = { onDecrementRole(role.id) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Text("−", color = AccentCrimson, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                                }
+                                            }
+
                                             // Display Count Badge for multiple count roles
                                             Box(
                                                 modifier = Modifier
@@ -1872,14 +1882,19 @@ fun SetupStageContent(
                                                     fontWeight = FontWeight.Bold
                                                 )
                                             }
-                                            
-                                            // Minus button for multiple count roles
+
+                                            // Plus button for multiple count roles
                                             if (!isUnique) {
                                                 IconButton(
-                                                    onClick = { onDecrementRole(role.id) },
+                                                    onClick = { onIncrementRole(role.id) },
                                                     modifier = Modifier.size(28.dp)
                                                 ) {
-                                                    Text("−", color = AccentCrimson, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = "افزایش تعداد",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
                                                 }
                                             }
                                         }
