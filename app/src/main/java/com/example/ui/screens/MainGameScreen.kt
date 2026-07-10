@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -2829,6 +2830,8 @@ fun PlayStageContent(
     var showInquiryPromptDialog by remember { mutableStateOf(false) }
     var showEndDayConfirmationDialog by remember { mutableStateOf(false) }
     var showSkipVotingDialog by remember { mutableStateOf(false) }
+    var showRifleKillDialog by remember { mutableStateOf(false) }
+    var rifleTargetPlayer by remember { mutableStateOf<PlayerEntity?>(null) }
     var showDayStatsDialog by remember { mutableStateOf(false) }
     var showNightReportDialog by remember { mutableStateOf(false) }
     var showGameOverDialog by remember { mutableStateOf(false) }
@@ -5186,6 +5189,16 @@ fun PlayStageContent(
                                      }
                                  }
                              }
+                             "CHURCHILL_SHOOT" -> {
+                                 ChurchillShootActionContent(
+                                     currentItem = currentItem,
+                                     players = players,
+                                     caps = caps,
+                                     viewModel = viewModel,
+                                     currentRound = currentRound,
+                                     triggerConfirmation = triggerConfirmation
+                                 )
+                             }
                          }
                      }
                   }
@@ -5246,11 +5259,14 @@ fun PlayStageContent(
                 EmptyListTip(text = "هیچ بازیکن منتخبی وجود ندارد. دکمه بازنشانی را بفشارید.")
             } else {
                 if (phase == "Day") {
+                    val sortedDayPlayers = remember(activeHandheldPlayers) {
+                        activeHandheldPlayers.sortedByDescending { it.isAlive }
+                    }
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(activeHandheldPlayers) { player ->
+                        items(sortedDayPlayers) { player ->
                             DayPlayerCard(
                                 player = player,
                                 playersInDefense = playersInDefense,
@@ -6564,7 +6580,13 @@ fun PlayStageContent(
                         Button(
                             onClick = {
                                 showEndDayConfirmationDialog = false
-                                onTogglePhase()
+                                val combatGunPlayer = players.firstOrNull { it.isSelected && it.isAlive && (it.hasCombatGun || it.hasLiveGunThisRound) }
+                                if (combatGunPlayer != null) {
+                                    rifleTargetPlayer = combatGunPlayer
+                                    showRifleKillDialog = true
+                                } else {
+                                    onTogglePhase()
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = AccentCrimson,
@@ -6617,7 +6639,13 @@ fun PlayStageContent(
             confirmButton = {
                 TextButton(onClick = { 
                     showSkipVotingDialog = false
-                    onTogglePhase()
+                    val combatGunPlayer = players.firstOrNull { it.isSelected && it.isAlive && (it.hasCombatGun || it.hasLiveGunThisRound) }
+                    if (combatGunPlayer != null) {
+                        rifleTargetPlayer = combatGunPlayer
+                        showRifleKillDialog = true
+                    } else {
+                        onTogglePhase()
+                    }
                 }) {
                     Text("بله، شروع شب", color = Color(0xFFBB86FC))
                 }
@@ -6625,6 +6653,34 @@ fun PlayStageContent(
             dismissButton = {
                 TextButton(onClick = { showSkipVotingDialog = false }) {
                     Text("انصراف", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    if (showRifleKillDialog && rifleTargetPlayer != null) {
+        AlertDialog(
+            onDismissRequest = { showRifleKillDialog = false },
+            title = { Text("وضعیت تفنگ جنگی", color = Color.White) },
+            text = { Text("آیا بازیکن (${rifleTargetPlayer?.name}) که تفنگ جنگی دارد، کشته شود؟", color = Color.LightGray) },
+            containerColor = Color(0xFF1E1E2E),
+            confirmButton = {
+                TextButton(onClick = {
+                    showRifleKillDialog = false
+                    rifleTargetPlayer?.let { target ->
+                        viewModel.eliminatePlayerWithReason(target.id, "RIFLE")
+                    }
+                    onTogglePhase()
+                }) {
+                    Text("بله، کشته شود", color = Color(0xFFEF4444))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showRifleKillDialog = false
+                    onTogglePhase()
+                }) {
+                    Text("خیر، زنده بماند", color = Color.Gray)
                 }
             }
         )
@@ -6851,32 +6907,49 @@ fun DayPlayerCard(
     onPlayerClick: (PlayerEntity) -> Unit
 ) {
     val displayNum = player.name.filter { it.isDigit() }.ifEmpty { player.id.toString() }
+    val isDead = !player.isAlive || player.isKilledToday
 
-    val cardBgColor = when (player.assignedRoleTeam) {
-        "Mafia" -> Color(0xFF3A1C1C)
-        "Citizen" -> Color(0xFF1A3320)
-        "Independent" -> Color(0xFF3D3514)
-        else -> Color(0xFF141423)
+    val cardBgColor = if (isDead) {
+        Color(0xFF26263B)
+    } else {
+        when (player.assignedRoleTeam) {
+            "Mafia" -> Color(0xFF3A1C1C)
+            "Citizen" -> Color(0xFF1A3320)
+            "Independent" -> Color(0xFF3D3514)
+            else -> Color(0xFF141423)
+        }
     }
 
-    val avatarBg = when (player.assignedRoleTeam) {
-        "Mafia" -> Color(0xFF261212)
-        "Citizen" -> Color(0xFF102114)
-        "Independent" -> Color(0xFF2B250E)
-        else -> Color(0xFF0F0F1A)
+    val avatarBg = if (isDead) {
+        Color(0xFF1C1C2C)
+    } else {
+        when (player.assignedRoleTeam) {
+            "Mafia" -> Color(0xFF261212)
+            "Citizen" -> Color(0xFF102114)
+            "Independent" -> Color(0xFF2B250E)
+            else -> Color(0xFF0F0F1A)
+        }
     }
 
-    val avatarBorderColor = when (player.assignedRoleTeam) {
-        "Mafia" -> Color(0xFFE57373)
-        "Citizen" -> Color(0xFF81C784)
-        "Independent" -> Color(0xFFFFB74D)
-        else -> Color(0xFF78909C)
+    val avatarBorderColor = if (isDead) {
+        Color(0xFF4A4A62)
+    } else {
+        when (player.assignedRoleTeam) {
+            "Mafia" -> Color(0xFFE57373)
+            "Citizen" -> Color(0xFF81C784)
+            "Independent" -> Color(0xFFFFB74D)
+            else -> Color(0xFF78909C)
+        }
     }
 
-    val emoji = when (player.assignedRoleTeam) {
-        "Mafia" -> "🕶️"
-        "Citizen" -> "🕊️"
-        else -> "🎭"
+    val emoji = if (isDead) {
+        "💀"
+    } else {
+        when (player.assignedRoleTeam) {
+            "Mafia" -> "🕶️"
+            "Citizen" -> "🕊️"
+            else -> "🎭"
+        }
     }
 
     Card(
@@ -6887,6 +6960,7 @@ fun DayPlayerCard(
             .fillMaxWidth()
             .clickable { onPlayerClick(player) }
             .padding(vertical = 3.dp)
+            .then(if (isDead) Modifier.alpha(0.4f) else Modifier)
     ) {
         Row(
             modifier = Modifier
@@ -6917,7 +6991,7 @@ fun DayPlayerCard(
                 ) {
                     Text(
                         text = player.name,
-                        color = Color.White,
+                        color = if (isDead) Color(0xFF64748B) else Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -6925,7 +6999,7 @@ fun DayPlayerCard(
                     )
                     Text(
                         text = player.assignedRoleName ?: "بدون نقش",
-                        color = Color.LightGray,
+                        color = if (isDead) Color(0xFF64748B) else Color.LightGray,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -6944,7 +7018,6 @@ fun DayPlayerCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val isDead = !player.isAlive || player.isKilledToday
                     if (isDead) {
                         DynamicStatusIcon(
                             emoji = "💀",
@@ -6998,7 +7071,7 @@ fun DayPlayerCard(
                 ) {
                     Text(
                         text = displayNum,
-                        color = Color.White,
+                        color = if (isDead) Color(0xFF64748B) else Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -11828,6 +11901,7 @@ fun ChurchillShootActionContent(
     var selectedTargetId by remember(currentItem) { mutableStateOf<Int?>(null) }
     var isTargetMenuExpanded by remember { mutableStateOf(false) }
     var churchillAlertMessage by remember { mutableStateOf<String?>(null) }
+    var actionType by remember(currentItem) { mutableStateOf("شلیک") }
     
     val churchillLastShotNight by viewModel.churchillLastShotNight.collectAsStateWithLifecycle()
     val isChurchillResting = churchillLastShotNight > 0 && (currentRound - churchillLastShotNight) < 2
@@ -11857,7 +11931,50 @@ fun ChurchillShootActionContent(
             )
         } else {
             Text(
-                text = "انتخاب بازیکن هدف برای شلیک:",
+                text = "نوع اقدام چرچیل: ⚡",
+                color = Color.LightGray,
+                fontSize = 11.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val isShoot = actionType == "شلیک"
+                Button(
+                    onClick = { actionType = "شلیک" },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isShoot) Color(0xFF3B82F6) else Color(0xFF191928),
+                        contentColor = if (isShoot) Color.White else Color.Gray
+                    ),
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isShoot) Color(0xFF3B82F6) else BorderColor.copy(alpha = 0.3f))
+                ) {
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("شلیک 🔫", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                val isSlaughter = actionType == "سلاخی"
+                Button(
+                    onClick = { actionType = "سلاخی" },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSlaughter) Color(0xFFC026D3) else Color(0xFF191928),
+                        contentColor = if (isSlaughter) Color.White else Color.Gray
+                    ),
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isSlaughter) Color(0xFFC026D3) else BorderColor.copy(alpha = 0.3f))
+                ) {
+                    Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("سلاخی 🔪", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Text(
+                text = "انتخاب بازیکن هدف برای ${actionType}:",
                 color = Color.LightGray,
                 fontSize = 11.sp
             )
@@ -11926,23 +12043,42 @@ fun ChurchillShootActionContent(
                         if (target != null) {
                             val isBulletproof = target.isBulletproof || target.assignedRoleName?.contains("رویین") == true || target.assignedRoleName?.lowercase()?.contains("bulletproof") == true
                             val isProtected = target.isProtected || target.assignedRoleName?.contains("محافظ") == true || target.assignedRoleName?.lowercase()?.contains("guardian") == true
-                            
-                            if (isBulletproof || isProtected) {
+                            val isTargetGodfather = target.assignedRoleName?.contains("پدرخوانده") == true || target.assignedRoleName?.lowercase()?.contains("godfather") == true
+
+                            if (actionType == "شلیک" && isTargetGodfather) {
                                 triggerConfirmation(
                                     "تایید شلیک چرچیل ⚔️",
-                                    "شلیک به بازیکن «${target.name}» به خاطر قابلیت‌های دفاعی او (رویین‌تن/محافظ) بی‌اثر است. آیا شلیک اعمال شود؟"
+                                    "شلیک به بازیکن «${target.name}» (پدرخوانده) به علت زره/رویین‌تن بودن بی‌اثر خواهد بود. آیا شلیک ثبت شود؟"
                                 ) {
-                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound)
-                                    churchillAlertMessage = "شلیک به این بازیکن بی‌اثر است (رویین‌تن/محافظ)."
+                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound, "شلیک")
+                                    churchillAlertMessage = "شلیک چرچیل به پدرخوانده («${target.name}») بی‌اثر است و او زنده می‌ماند."
+                                    selectedTargetId = null
+                                }
+                            } else if (actionType == "سلاخی" && isTargetGodfather) {
+                                triggerConfirmation(
+                                    "تایید سلاخی چرچیل ⚔️",
+                                    "آیا مطمئن هستید که می‌خواهید بازیکن «${target.name}» (پدرخوانده) را سلاخی کنید؟ پدرخوانده کشته خواهد شد."
+                                ) {
+                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound, "سلاخی")
+                                    churchillAlertMessage = "سلاخی چرچیل بر روی پدرخوانده («${target.name}») با موفقیت ثبت گردید و او حذف می‌شود."
+                                    selectedTargetId = null
+                                }
+                            } else if (isBulletproof || isProtected) {
+                                triggerConfirmation(
+                                    "تایید ${actionType} چرچیل ⚔️",
+                                    "اقدام به بازیکن «${target.name}» به خاطر قابلیت‌های دفاعی او (رویین‌تن/محافظ) بی‌اثر است. آیا ثبت شود؟"
+                                ) {
+                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound, actionType)
+                                    churchillAlertMessage = "اقدام به این بازیکن بی‌اثر است (رویین‌تن/محافظ)."
                                     selectedTargetId = null
                                 }
                             } else {
                                 triggerConfirmation(
-                                    "تایید شلیک چرچیل ⚔️",
-                                    "آیا مطمئن هستید که می‌خواهید به بازیکن «${target.name}» شلیک کنید؟ این کشته توسط پزشک قابل شفا نیست."
+                                    "تایید ${actionType} چرچیل ⚔️",
+                                    "آیا مطمئن هستید که می‌خواهید بازیکن «${target.name}» را ${actionType} کنید؟ این کشته توسط پزشک قابل شفا نیست."
                                 ) {
-                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound)
-                                    churchillAlertMessage = "شلیک با موفقیت ثبت گردید."
+                                    viewModel.churchillShoot(currentItem.player.id, target.id, currentRound, actionType)
+                                    churchillAlertMessage = "اقدام با موفقیت ثبت گردید."
                                     selectedTargetId = null
                                 }
                             }
@@ -11951,7 +12087,7 @@ fun ChurchillShootActionContent(
                 },
                 enabled = isConfirmEnabled,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentCrimson,
+                    containerColor = if (actionType == "شلیک") AccentCrimson else Color(0xFFC026D3),
                     disabledContainerColor = Color(0xFF1E1E2D)
                 ),
                 modifier = Modifier
@@ -11961,7 +12097,7 @@ fun ChurchillShootActionContent(
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Text(
-                    text = if (isChurchillBlocked) "🚫 مسدود شده‌اید" else "شلیک و شات چرچیل ⚔️🤵",
+                    text = if (isChurchillBlocked) "🚫 مسدود شده‌اید" else "ثبت ${actionType} چرچیل ⚔️🤵",
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     color = if (isConfirmEnabled) Color.White else Color.Gray
@@ -11972,7 +12108,7 @@ fun ChurchillShootActionContent(
 
     churchillAlertMessage?.let { msg ->
         StyledConfirmationDialog(
-            title = "گزارش شلیک چرچیل ⚔️",
+            title = "گزارش اقدام چرچیل ⚔️",
             message = msg,
             onConfirm = { churchillAlertMessage = null },
             onDismiss = { churchillAlertMessage = null }
