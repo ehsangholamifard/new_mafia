@@ -41,7 +41,6 @@ data class PlayerEntity(
     val usedLiveGun: Boolean = false,
     val isSilencedThisRound: Boolean = false,
     val isSabotaged: Boolean = false,
-    val isKilledByChurchill: Boolean = false,
     val isBulletproof: Boolean = false,
     val isProtected: Boolean = false
 )
@@ -95,7 +94,6 @@ data class GameSessionEntity(
     val remainingInquiries: Int = 3,
     val totalInquiries: Int = 3,
     val sagiCooldownNight: Int = 0,
-    val churchillLastShotNight: Int = 0,
     val sagiPastTargetsJson: String = "[]",
     val isGravedigActiveThisNight: Boolean = false,
     val natoWrongGuessesCount: Int = 0,

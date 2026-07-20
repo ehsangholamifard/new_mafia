@@ -206,18 +206,24 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                     capabilitiesJson = """[{"name":"رؤیت آینده 🔮","totalCount":1,"remainingCount":1}]"""
                 ),
                 RoleEntity(
-                    name = "چرچیل 🎩",
-                    description = "شخص مستقل بازی با قابلیت شلیک شبانه که پزشک نجات‌یافتنی نیست. روی رویین‌تن و محافظ اثری ندارد.",
-                    team = "Independent",
-                    capabilitiesJson = """[{"name":"شلیک شبانه ⚔️","totalCount":10,"remainingCount":10}]""",
-                    abilitiesJson = """["CHURCHILL_SHOOT"]"""
-                ),
-                RoleEntity(
                     name = "مجهول 👤❓",
                     description = "یک نقش مستقل و خنثی که بیدار نمی‌شود. اگر مورد هدف مافیا قرار گیرد به [مافیای ساده] و اگر مورد هدف شهروند یا مستقل قرار گیرد به [شهروند ساده] تبدیل می‌شود.",
                     team = "Independent",
                     capabilitiesJson = "[]",
                     abilitiesJson = "[]"
+                ),
+                RoleEntity(
+                    name = "کیلر",
+                    description = "هر دو شب یکبار بیدار میشود. قابلیت شلیک و سلاخی دارد. در شب کشته نمیشود (مگر با سلاخی).",
+                    team = "Independent",
+                    capabilitiesJson = """[{"name":"شلیک کیلر ⚔️","totalCount":10,"remainingCount":10}]""",
+                    abilitiesJson = """["KILLER_SHOOT"]"""
+                ),
+                RoleEntity(
+                    name = "چرچیل 🎩",
+                    description = "شخص مستقل بازی که قابلیت شلیک و سلاخی دارد. قتلهای او قطعی است و در شب کشته نمیشود (مگر با سلاخی).",
+                    team = "Independent",
+                    capabilitiesJson = """[{"name":"شلیک شبانه 🔫","totalCount":10,"remainingCount":10},{"name":"سلاخی 🔪","totalCount":10,"remainingCount":10}]"""
                 )
             )
             mafiaDao.insertRoles(defaults)
