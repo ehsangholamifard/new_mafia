@@ -2830,4 +2830,103 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun resolveNightActions(actions: List<NightAction>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentNight = gameLogs.value.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
+            val isNight1 = currentNight == 1 || currentNight == 0
+
+            // Step 1: Scan all night actions for 'سلاخی' targets.
+            // Mark these targets as absolutely dead.
+            // Remove or ignore any actions submitted by these slaughtered players from the execution queue.
+            val actualSlaughteredTargetIds = mutableSetOf<Int>()
+            for (action in actions.filter { it.type == "SLAUGHTER" }) {
+                val targetPlayer = repository.getPlayerById(action.targetId) ?: continue
+                val isChurchill = targetPlayer.assignedRoleName?.contains("چرچیل") == true
+                if (isChurchill && isNight1) {
+                    repository.addLog("🛡️ اقدام ناموفق: بازیکن «${targetPlayer.name}» (چرچیل) مورد سلاخی قرار گرفت، اما به دلیل مصونیت مطلق شب اول جان سالم به در برد.")
+                } else {
+                    actualSlaughteredTargetIds.add(action.targetId)
+                }
+            }
+
+            // Remove or ignore any actions submitted by these slaughtered players from the execution queue
+            val executionQueue = actions.filter { it.actorId !in actualSlaughteredTargetIds }
+
+            // Step 2: Scan for 'شلیک' targets. Execute their submitted actions normally.
+            val shotTargetIds = mutableSetOf<Int>()
+            for (action in executionQueue.filter { it.type == "SHOOT" }) {
+                val targetPlayer = repository.getPlayerById(action.targetId) ?: continue
+                val isChurchill = targetPlayer.assignedRoleName?.contains("چرچیل") == true
+                if (isChurchill && isNight1) {
+                    repository.addLog("🛡️ اقدام ناموفق: به بازیکن «${targetPlayer.name}» (چرچیل) شلیک شد، اما به دلیل مصونیت مطلق شب اول زنده ماند.")
+                } else {
+                    shotTargetIds.add(action.targetId)
+                }
+            }
+
+            // Step 3: Process Heals (Doctor/Lecter).
+            // If a 'شلیک' target is healed, they survive. If a 'سلاخی' target is healed, the heal fails and they still die.
+            val healedTargetIds = executionQueue.filter { it.type == "HEAL" }.map { it.targetId }.toSet()
+
+            val allInvolvedPlayerIds = (actions.map { it.actorId } + actions.map { it.targetId }).distinct()
+            for (playerId in allInvolvedPlayerIds) {
+                val player = repository.getPlayerById(playerId) ?: continue
+                var updated = player
+
+                val isChurchill = player.assignedRoleName?.contains("چرچیل") == true
+                val isKiller = player.assignedRoleName?.contains("کیلر") == true
+                val isToughGuy = player.assignedRoleName?.contains("جان") == true && player.assignedRoleName?.contains("سخت") == true
+
+                if (playerId in actualSlaughteredTargetIds) {
+                    updated = updated.copy(
+                        isAlive = false,
+                        isSlaughtered = true,
+                        isSaved = false,
+                        isBlocked = false,
+                        isMuted = false,
+                        isShotThisNight = true
+                    )
+                    repository.updatePlayer(updated)
+                    repository.addLog("🔪 بازیکن «${player.name}» سلاخی شد و از بازی به طور کامل کنار رفت! پزشک نجات بی‌اثر است.")
+                } else if (playerId in shotTargetIds) {
+                    val isHealed = playerId in healedTargetIds
+                    if (isChurchill || isKiller) {
+                        updated = updated.copy(isShotThisNight = true, isAlive = true)
+                        repository.updatePlayer(updated)
+                        val roleLabel = if (isKiller) "کیلر" else "چرچیل"
+                        repository.addLog("🛡️ بازیکن «${player.name}» ($roleLabel) مورد شلیک قرار گرفت، اما به دلیل مصونیت شبانه زنده ماند.")
+                    } else if (isToughGuy) {
+                        updated = updated.copy(isShotThisNight = true, isAlive = true)
+                        repository.updatePlayer(updated)
+                        repository.addLog("🛡️ بازیکن «${player.name}» (جان‌سخت) مورد شلیک قرار گرفت، اما به دلیل جان‌سختی زنده ماند.")
+                    } else if (isHealed) {
+                        updated = updated.copy(isShotThisNight = true, isAlive = true, isSaved = true)
+                        repository.updatePlayer(updated)
+                        repository.addLog("🛡️ به بازیکن «${player.name}» شلیک شد، اما به دلیل شفا/نجات پزشک زنده ماند.")
+                    } else {
+                        updated = updated.copy(isShotThisNight = true, isAlive = false)
+                        repository.updatePlayer(updated)
+                        repository.addLog("💀 بازیکن «${player.name}» در شب با شلیک مستقیم کشته شد.")
+                    }
+                } else if (playerId in healedTargetIds) {
+                    updated = updated.copy(isSaved = true)
+                    repository.updatePlayer(updated)
+                    repository.addLog("🩺 بازیکن «${player.name}» مورد شفا/نجات پزشک قرار گرفت.")
+                }
+            }
+
+            if (_selectedPlayerForSettings.value?.let { it.id in allInvolvedPlayerIds } == true) {
+                _selectedPlayerForSettings.value = repository.getPlayerById(_selectedPlayerForSettings.value!!.id)
+            }
+        }
+    }
 }
+
+@Serializable
+data class NightAction(
+    val actorId: Int,
+    val targetId: Int,
+    val type: String // "SLAUGHTER", "SHOOT", "HEAL"
+)
+
