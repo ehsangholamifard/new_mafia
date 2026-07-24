@@ -136,6 +136,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingNightActions = MutableStateFlow<List<NightAction>>(emptyList())
     val pendingNightActions: StateFlow<List<NightAction>> = _pendingNightActions.asStateFlow()
 
+    // Distribution Queue
+    private val _distributionQueue = MutableStateFlow<List<PlayerEntity>>(emptyList())
+    val distributionQueue: StateFlow<List<PlayerEntity>> = _distributionQueue.asStateFlow()
+
     fun addNightAction(action: NightAction) {
         _pendingNightActions.value = _pendingNightActions.value + action
     }
@@ -451,21 +455,20 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun distributeRolesAndStartGame() {
         viewModelScope.launch(Dispatchers.IO) {
-            val chosenPlayers = players.value.filter { it.isSelected }
-            val chosenRoles = roles.value.filter { it.count > 0 }
+            // 1. Prepare Roles and Shuffled Players
+            val chosenPlayers = players.value.filter { it.isSelected }.shuffled() 
+            val chosenRoles = roles.value.filter { it.count > 0 }.toMutableList()
 
-            val totalRolesCount = chosenRoles.sumOf { it.count }
-            if (chosenPlayers.size != totalRolesCount) {
-                repository.addLog("خطا: تعداد بازیکنان انتخاب شده (${chosenPlayers.size}) با تعداد نقش‌های تعریف شده ($totalRolesCount) مطابقت ندارد!")
-                return@launch
-            }
-
-            // Shuffle roles sequence
             val roleAssignmentList = mutableListOf<RoleEntity>()
             chosenRoles.forEach { role ->
                 repeat(role.count) {
                     roleAssignmentList.add(role)
                 }
+            }
+
+            // Fallback
+            while (roleAssignmentList.size < chosenPlayers.size) {
+                roleAssignmentList.add(RoleEntity(name = "شهروند ساده 👤", team = "Citizen", description = "بدون قابلیت", capabilitiesJson = "[]"))
             }
             roleAssignmentList.shuffle()
 
@@ -475,7 +478,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 repository.addLog("🎤 گرداننده (خدا) بازی: ${_moderatorName.value}")
             }
 
-            // Distribute
+            // 2. UNIFIED RESET & ASSIGNMENT (Overrides ALL previous game states)
             val updatedPlayers = chosenPlayers.mapIndexed { index, player ->
                 val assignedRole = roleAssignmentList[index]
                 player.copy(
@@ -483,24 +486,47 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     assignedRoleId = assignedRole.id,
                     assignedRoleName = assignedRole.name,
                     assignedRoleTeam = assignedRole.team,
-                    capabilitiesJson = assignedRole.capabilitiesJson,
+                    capabilitiesJson = assignedRole.capabilitiesJson, // Resets capability counters
                     isBlocked = false,
                     isMuted = false,
                     isVoteRevoked = false,
                     isSaved = false,
                     voteCount = 0,
                     note = "",
-                    warningsCount = 0
+                    warningsCount = 0,
+                    isShotThisNight = false,
+                    isSlaughtered = false,
+                    isHealedThisNight = false,
+                    isBlockedThisNight = false,
+                    wasBlockedLastNight = false,
+                    isInsuredThisNight = false,
+                    doctorSelfSavesCount = 0,
+                    hasUsedLastMoveCard = false,
+                    isKilledToday = false,
+                    isRevealedMafia = false,
+                    willDieNextNight = false,
+                    isRevivedThisNight = false,
+                    hasBlankGunThisRound = false,
+                    hasLiveGunThisRound = false,
+                    hasBlankGun = false,
+                    hasCombatGun = false,
+                    usedLiveGun = false,
+                    isSilencedThisRound = false,
+                    isSabotaged = false,
+                    isBulletproof = false,
+                    isProtected = false
                 )
             }
 
-            // Save unselected players as inactive / or delete them? Keep them unchanged but clear their role assignments
             val unselectedPlayers = players.value.filter { !it.isSelected }.map {
                 it.copy(assignedRoleId = null, assignedRoleName = null, assignedRoleTeam = null, capabilitiesJson = "", isAlive = false)
             }
 
+            // 3. SINGLE BATCH DB TRANSACTION (Prevents concurrent overwrite)
             repository.insertPlayers(updatedPlayers + unselectedPlayers)
-            _remainingInquiries.value = _totalInquiries.value
+            
+            // 4. Set UI States
+            _distributionQueue.value = updatedPlayers
             _gameStage.value = "DISTRIBUTION"
             _gamePhase.value = "Night"
             repository.addLog("کارت نقش‌ها با موفقیت مابین بازیکنان توزیع شد 🃏")

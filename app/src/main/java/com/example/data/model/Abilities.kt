@@ -177,6 +177,42 @@ data class NightActionQueueItem(
     val ability: Ability
 )
 
+fun getRoleNightPriority(roleName: String?): Int {
+    if (roleName == null) return 999
+    return when {
+        // 1. INDEPENDENT TEAM (Top Priority)
+        roleName.contains("چرچیل") -> 100
+        roleName.contains("هزارچهره") -> 101
+        roleName.contains("نوستراداموس") -> 102
+        roleName.contains("مجهول") -> 103
+        roleName.contains("کیلر") -> 104
+
+        // 2. MAFIA TEAM (Second Priority)
+        roleName.contains("پدرخوانده") || roleName.contains("رئیس") -> 200
+        roleName.contains("لکتور") -> 201
+        roleName.contains("ماتادور") -> 202
+        roleName.contains("خریدار") -> 203
+        roleName.contains("خرابکار") -> 204
+
+        // 3. CITIZEN TEAM (Third Priority)
+        roleName.contains("ساقی") -> 300
+        roleName.contains("کشیش") -> 301
+        roleName.contains("کارآگاه") || roleName.contains("کاراگاه") -> 302
+        roleName.contains("دکتر") && !roleName.contains("لکتور") -> 303
+        roleName.contains("حرفهای") || roleName.contains("حرفه ای") -> 304
+        roleName.contains("اوشن") || roleName.contains("ژنرال") -> 305
+        roleName.contains("تفنگدار") -> 306
+        roleName.contains("همشهری کین") -> 307
+        roleName.contains("روانپزشک") || roleName.contains("روان پزشک") -> 308
+
+        else -> 900 // Any other role wakes up last
+    }
+}
+
+fun getNightPriority(roleName: String, teamName: String): Int {
+    return getRoleNightPriority(roleName)
+}
+
 fun buildNightQueue(players: List<PlayerEntity>, roles: List<RoleEntity>): List<NightActionQueueItem> {
     val queue = mutableListOf<NightActionQueueItem>()
     val aliveSelectedPlayers = players.filter { it.isSelected && it.isAlive }
@@ -208,5 +244,9 @@ fun buildNightQueue(players: List<PlayerEntity>, roles: List<RoleEntity>): List<
         }
     }
     
-    return queue.sortedBy { it.ability.nightPriority ?: Int.MAX_VALUE }
+    return queue.sortedBy { item ->
+        val role = roles.find { it.id == item.player.assignedRoleId || it.name == item.player.assignedRoleName }
+        val roleName = item.player.assignedRoleName ?: role?.name ?: ""
+        getRoleNightPriority(roleName)
+    }
 }

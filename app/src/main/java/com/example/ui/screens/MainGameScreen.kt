@@ -113,6 +113,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         val sagiCooldownNight by viewModel.sagiCooldownNight.collectAsStateWithLifecycle()
         val sagiPastTargets by viewModel.sagiPastTargets.collectAsStateWithLifecycle()
         val gameSessions by viewModel.gameSessions.collectAsStateWithLifecycle()
+        val distributionQueue by viewModel.distributionQueue.collectAsStateWithLifecycle()
 
         var currentScreen by remember {
             mutableStateOf(
@@ -277,7 +278,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                             onConfigureCapabilities = { roleToConfigureCapabilities = it }
                         )
                         "DISTRIBUTION" -> SecretDistributionContent(
-                            players = players.filter { it.isSelected },
+                            players = distributionQueue.ifEmpty { players.filter { it.isSelected } },
                             onConfirmStart = { viewModel.advanceToPlayStage() }
                         )
                         "PLAY" -> PlayStageContent(
@@ -776,7 +777,6 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         initialValue = moderatorName,
                         onConfirm = { name ->
                             viewModel.setModeratorName(name)
-                            viewModel.startNewCleanGame()
                             viewModel.distributeRolesAndStartGame()
                             showModeratorNameDialog = false
                         },
@@ -3133,54 +3133,7 @@ fun PlayStageContent(
             }
         }
 
-        // --- Redesigned Compact Night Turn Info Banner (ONLY in Night phase) ---
-        if (phase == "Night") {
-            if (currentNightQueueIndex >= nightQueue.size && nightQueue.isNotEmpty()) {
-                currentNightQueueIndex = nightQueue.size - 1
-            }
-            val currentItem = nightQueue.getOrNull(currentNightQueueIndex)
-            if (currentItem != null) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF140F22)),
-                    border = BorderStroke(1.dp, PrimaryPurple.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "نوبت بیداری: ${currentItem.player.name} (${currentItem.player.assignedRoleName ?: ""})",
-                            color = AccentGold,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = currentItem.ability.name + ": " + currentItem.ability.description,
-                            color = TextSecondary,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
-                        )
 
-                        if (currentItem.ability.id == "GRAVEDIG") {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                Checkbox(
-                                    checked = isGravedigActive,
-                                    onCheckedChange = { viewModel.setGravedigActive(it) },
-                                    colors = CheckboxDefaults.colors(checkedColor = AccentGold)
-                                )
-                                Text("فعال‌سازی نبش قبر امشب 🪦", color = Color.White, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // --- Dynamic Night Waking Queue Section (ONLY in Night phase) ---
         if (false) { // Bypassed old massive card
@@ -5419,11 +5372,7 @@ fun PlayStageContent(
             val activeHandheldPlayers = remember(players, phase, searchQuery, selectedCategory) {
                 val active = players.filter { it.isSelected }
                 val filtered = if (phase == "Night") {
-                    val independent = active.filter { it.assignedRoleTeam == "Independent" }
-                    val mafia = active.filter { it.assignedRoleTeam == "Mafia" }
-                    val citizens = active.filter { it.assignedRoleTeam == "Citizen" }
-                    val otherList = active.filter { it.assignedRoleTeam != "Independent" && it.assignedRoleTeam != "Mafia" && it.assignedRoleTeam != "Citizen" }
-                    independent + mafia + citizens + otherList
+                    active.sortedBy { com.example.data.model.getRoleNightPriority(it.assignedRoleName) }
                 } else {
                     active
                 }
@@ -5446,8 +5395,8 @@ fun PlayStageContent(
                 EmptyListTip(text = "هیچ بازیکن منتخبی وجود ندارد. دکمه بازنشانی را بفشارید.")
             } else {
                 if (phase == "Day") {
-                    val sortedDayPlayers = remember(activeHandheldPlayers) {
-                        activeHandheldPlayers.sortedByDescending { it.isAlive }
+                    val sortedDayPlayers = remember(activeHandheldPlayers, currentRound) {
+                        activeHandheldPlayers.shuffled().sortedByDescending { it.isAlive }
                     }
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
