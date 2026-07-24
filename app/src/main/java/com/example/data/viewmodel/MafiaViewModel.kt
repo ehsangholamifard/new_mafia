@@ -132,6 +132,23 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         _musketeerLiveGunExhausted.value = exhausted
     }
 
+    // Pending Night Actions Queue
+    private val _pendingNightActions = MutableStateFlow<List<NightAction>>(emptyList())
+    val pendingNightActions: StateFlow<List<NightAction>> = _pendingNightActions.asStateFlow()
+
+    fun addNightAction(action: NightAction) {
+        _pendingNightActions.value = _pendingNightActions.value + action
+    }
+
+    fun clearPendingNightActions() {
+        _pendingNightActions.value = emptyList()
+    }
+
+    fun processEndOfNight() {
+        resolveNightActions(_pendingNightActions.value)
+        clearPendingNightActions()
+    }
+
     // Last Move Cards list
     private val _lastMoveCards = MutableStateFlow(
         listOf(
@@ -1073,6 +1090,78 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         resetGame()
     }
 
+    fun startNewCleanGame() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _pendingNightActions.value = emptyList()
+            repository.clearLogs()
+
+            _lastMoveCards.value = _lastMoveCards.value.map {
+                it.copy(isBurnt = false)
+            }
+
+            fun resetCapsJson(json: String): String {
+                if (json.isBlank()) return ""
+                return try {
+                    val caps = Json.decodeFromString<List<RoleCapability>>(json)
+                    val resetCaps = caps.map { it.copy(remainingCount = it.totalCount) }
+                    Json.encodeToString(resetCaps)
+                } catch (e: Exception) {
+                    json
+                }
+            }
+
+            val updatedRoles = roles.value.map { role ->
+                role.copy(capabilitiesJson = resetCapsJson(role.capabilitiesJson))
+            }
+            repository.insertRoles(updatedRoles)
+
+            val updatedPlayers = players.value.map { player ->
+                player.copy(
+                    isAlive = true,
+                    isShotThisNight = false,
+                    isSlaughtered = false,
+                    isBlocked = false,
+                    isMuted = false,
+                    isSaved = false,
+                    isVoteRevoked = false,
+                    isHealedThisNight = false,
+                    isBlockedThisNight = false,
+                    wasBlockedLastNight = false,
+                    isInsuredThisNight = false,
+                    doctorSelfSavesCount = 0,
+                    hasUsedLastMoveCard = false,
+                    note = "",
+                    voteCount = 0,
+                    warningsCount = 0,
+                    isKilledToday = false,
+                    isRevealedMafia = false,
+                    willDieNextNight = false,
+                    isRevivedThisNight = false,
+                    hasBlankGunThisRound = false,
+                    hasLiveGunThisRound = false,
+                    hasBlankGun = false,
+                    hasCombatGun = false,
+                    usedLiveGun = false,
+                    isSilencedThisRound = false,
+                    isSabotaged = false,
+                    isBulletproof = false,
+                    isProtected = false,
+                    capabilitiesJson = resetCapsJson(player.capabilitiesJson)
+                )
+            }
+            repository.insertPlayers(updatedPlayers)
+
+            _musketeerLiveGunExhausted.value = false
+            _sagiCooldownNight.value = 0
+            _sagiPastTargets.value = emptyList()
+            _isGravedigActiveThisNight.value = false
+            _natoWrongGuessesCount.value = 0
+            _remainingInquiries.value = _totalInquiries.value
+            _selectedPlayerForSettings.value = null
+            _activeSessionId.value = null
+        }
+    }
+
     // --- Import / Export Configurations (JSON) ---
     fun exportSetupAsJson(): String {
         return try {
@@ -1391,62 +1480,38 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val isActionPreventedByInsurance = target.isInsuredThisNight
-            val finalMsg = if (isActionPreventedByInsurance) {
-                repository.addLog("🛡️ مست کردن ساقی «${sagi.name}» روی «${target.name}» به علت بیمه بی‌اثر شد.")
-                "مست کردن بازیکن «${target.name}» با موفقیت ثبت شد (توسط بیمه خنثی شد)."
-            } else {
-                val updatedTarget = target.copy(isBlockedThisNight = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🍷 ساقی «${sagi.name}» بازیکن «${target.name}» را مست (مسدود) کرد.")
-                "بازیکن «${target.name}» با موفقیت مست و قابلیت شب وی مسدود گردید."
-            }
-
-            // Update Sagi constraints
             _sagiPastTargets.value = _sagiPastTargets.value + targetId
             _sagiCooldownNight.value = currentRound + 1
 
+            val updatedTarget = target.copy(isBlockedThisNight = true)
+            repository.updatePlayer(updatedTarget)
+
+            repository.addLog("🍷 ساقی «${sagi.name}» بازیکن «${target.name}» را مست کرد.")
             withContext(Dispatchers.Main) {
-                onResult(true, finalMsg)
+                onResult(true, "بازیکن «${target.name}» با موفقیت مست شد.")
             }
 
-            // Refresh selected player settings
             if (_selectedPlayerForSettings.value?.id == sagiId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(sagiId)
             }
         }
     }
 
-    fun professionalShoot(professionalId: Int, targetId: Int, overrideKill: Boolean? = null) {
+    fun professionalShoot(professionalId: Int, targetId: Int, overrideKill: Boolean? = false) {
         viewModelScope.launch(Dispatchers.IO) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
             val target = checkAndTransformMajhool(professionalId, targetId)
-            
+
             if (target.isInsuredThisNight) {
-                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.assignedRoleName ?: "حرفه‌ای"}» روی او خنثی شد.")
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.name}» روی او خنثی شد.")
                 return@launch
             }
-            
+
             if (prof.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
                 return@launch
             }
 
-            // Check remaining capability count first
-            if (prof.capabilitiesJson.isNotBlank()) {
-                try {
-                    val caps = Json.decodeFromString<List<RoleCapability>>(prof.capabilitiesJson)
-                    val shootCap = caps.find { it.name.contains("شلیک") }
-                    if (shootCap != null && shootCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: حرفه‌ای دیگر شلیک مجاز باقی‌آمده ندارد.")
-                        return@launch
-                    }
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-
-            // First. decrement the professional's remaining capability count
             if (prof.capabilitiesJson.isNotBlank()) {
                 try {
                     val caps = Json.decodeFromString<List<RoleCapability>>(prof.capabilitiesJson)
@@ -1459,132 +1524,43 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     val updatedProf = prof.copy(capabilitiesJson = updatedJson)
                     repository.updatePlayer(updatedProf)
                 } catch (e: Exception) {
-                    // ignore format errors
+                    // ignore
                 }
             }
 
-            if (overrideKill != null) {
-                if (overrideKill) {
-                    // Eliminated
-                    val deadTarget = target.copy(isShotThisNight = true, isAlive = false)
-                    repository.updatePlayer(deadTarget)
-                    repository.addLog("💀 بازیکن «${target.name}» (پدرخوانده) با تأیید گرداننده تحت شلیک مستقیم «${prof.name}» (حرفه‌ای) کشته و از بازی حذف شد.")
-                } else {
-                    // Survive
-                    val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                    repository.updatePlayer(updatedTarget)
-                    repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به بازیکن «${target.name}» (پدرخوانده) شلیک کرد اما با تصمیم لغو گرداننده زنده ماند.")
-                }
-            } else {
-                // Rules:
-                // 1. Target is a Citizen (Team is Citizen) -> Professional is eliminated
-                if (target.assignedRoleTeam == "Citizen") {
-                    // Professional commits suicide
-                    val deadProf = prof.copy(isAlive = false, isSaved = false, isShotThisNight = true)
-                    repository.updatePlayer(deadProf)
-                    repository.addLog("💀 بازیکن «${prof.name}» (حرفه‌ای) به اشتباه به هم‌تیمی خود «${target.name}» (شهروند) شلیک کرد و فوراً خودکشی انتحاری روی او اعمال گردید. شفا بر روی او بی‌اثر است.")
-                } else if (target.assignedRoleTeam == "Mafia") {
-                    val isGodfather = target.assignedRoleName?.contains("پدرخوانده") == true
-                    if (isGodfather) {
-                        // Survive
-                        repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به رئیس مافیا (پدرخوانده) «${target.name}» شلیک کرد اما تیر بر روی او کارساز نبود.")
-                    } else {
-                        // Eliminated / Check if saved by doctor
-                        if (target.isHealedThisNight) {
-                            val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                            repository.updatePlayer(updatedTarget)
-                            repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به «${target.name}» شلیک کرد، اما پزشک او را شفا داده بود و زنده ماند.")
-                        } else {
-                            val deadTarget = target.copy(isShotThisNight = true, isAlive = false)
-                            repository.updatePlayer(deadTarget)
-                            repository.addLog("💀 بازیکن «${target.name}» توسط شلیک مستقیم «${prof.name}» (حرفه‌ای) کشته و از بازی حذف شد.")
-                        }
-                    }
-                } else if (target.assignedRoleTeam == "Independent") {
-                    val isKiller = target.assignedRoleName?.contains("کیلر") == true
-                    val isChurchill = target.assignedRoleName?.contains("چرچیل") == true
-                    if (isKiller || isChurchill) {
-                        // Killer/Churchill is immune to standard night kills
-                        val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                        repository.updatePlayer(updatedTarget)
-                        val roleName = if (isKiller) "کیلر" else "چرچیل"
-                        repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به بازیکن «${target.name}» ($roleName) شلیک کرد اما $roleName به دلیل مصونیت شبانه زنده ماند.")
-                    } else {
-                        // Eliminated / Check if saved by doctor
-                        if (target.isHealedThisNight) {
-                            val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                            repository.updatePlayer(updatedTarget)
-                            repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به «${target.name}» شلیک کرد، اما پزشک او را نجات داد.")
-                        } else {
-                            val deadTarget = target.copy(isShotThisNight = true, isAlive = false)
-                            repository.updatePlayer(deadTarget)
-                            repository.addLog("💀 بازیکن «${target.name}» توسط شلیک هدفمند «${prof.name}» (حرفه‌ای) حذف گردید.")
-                        }
-                    }
-                } else {
-                    // Catch any other independent or un-teamed players
-                    val isKiller = target.assignedRoleName?.contains("کیلر") == true
-                    val isChurchill = target.assignedRoleName?.contains("چرچیل") == true
-                    if (isKiller || isChurchill) {
-                        val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                        repository.updatePlayer(updatedTarget)
-                        val roleName = if (isKiller) "کیلر" else "چرچیل"
-                        repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به بازیکن «${target.name}» ($roleName) شلیک کرد اما $roleName به دلیل مصونیت شبانه زنده ماند.")
-                    } else if (target.isHealedThisNight) {
-                        val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                        repository.updatePlayer(updatedTarget)
-                        repository.addLog("🛡️ بازیکن «${prof.name}» (حرفه‌ای) به «${target.name}» شلیک کرد اما به دلیل نجات پزشک زنده ماند.")
-                    } else {
-                        val deadTarget = target.copy(isShotThisNight = true, isAlive = false)
-                        repository.updatePlayer(deadTarget)
-                        repository.addLog("💀 بازیکن «${target.name}» توسط «${prof.name}» (حرفه‌ای) شلیک و حذف شد.")
-                    }
-                }
-            }
-            
-            // Also make sure to refresh selectedPlayerForSettings State if needed
-            val refreshedProf = repository.getPlayerById(professionalId)
+            addNightAction(NightAction(actorId = professionalId, targetId = targetId, type = "SHOOT"))
+            repository.addLog("💥 اقدام شلیک «${prof.name}» (حرفه‌ای) برای «${target.name}» در صف شب ثبت شد.")
+
             if (_selectedPlayerForSettings.value?.id == professionalId) {
-                _selectedPlayerForSettings.value = refreshedProf
+                _selectedPlayerForSettings.value = repository.getPlayerById(professionalId)
             }
         }
+    }
+
+    fun onProfessionalShoot(professionalId: Int, targetId: Int, overrideKill: Boolean? = false) {
+        professionalShoot(professionalId, targetId, overrideKill)
     }
 
     fun professionalSlaughter(professionalId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val prof = repository.getPlayerById(professionalId) ?: return@launch
-            val target = repository.getPlayerById(targetId) ?: return@launch
-            
+            val target = checkAndTransformMajhool(professionalId, targetId)
+
             if (target.isInsuredThisNight) {
-                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.assignedRoleName ?: "حرفه‌ای"}» روی او خنثی شد.")
+                repository.addLog("🛡️ اقدام ناموفق: بازیکن هدف «${target.name}» بیمه است و اثر قابلیت حرفه‌ای «${prof.name}» روی او خنثی شد.")
                 return@launch
             }
-            
+
             if (prof.isBlockedThisNight) {
                 repository.addLog("⚠️ خطا: قابلیت حرفه‌ای «${prof.name}» امشب توسط ماتادور بسته شده است.")
                 return@launch
             }
 
-            // Check remaining capability count first
-            if (prof.capabilitiesJson.isNotBlank()) {
-                try {
-                    val caps = Json.decodeFromString<List<RoleCapability>>(prof.capabilitiesJson)
-                    val shootCap = caps.find { it.name.contains("شلیک") }
-                    if (shootCap != null && shootCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: حرفه‌ای دیگر شلیک/سلاخی مجاز باقی‌مانده ندارد.")
-                        return@launch
-                    }
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-
-            // Decrement remaining capability count of professional as well
             if (prof.capabilitiesJson.isNotBlank()) {
                 try {
                     val caps = Json.decodeFromString<List<RoleCapability>>(prof.capabilitiesJson)
                     val updatedCaps = caps.map { cap ->
-                        if (cap.name.contains("شلیک") && cap.remainingCount > 0) {
+                        if ((cap.name.contains("سلاخی") || cap.name.contains("شلیک")) && cap.remainingCount > 0) {
                             cap.copy(remainingCount = cap.remainingCount - 1)
                         } else cap
                     }
@@ -1596,33 +1572,17 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Slaughter logic:
-            // Bypasses doctor's save, abilities neutralized, and receives permanent Slaughtered status
-            val isTargetChurchill = target.assignedRoleName?.contains("چرچیل") == true
-            val currentNight = gameLogs.value.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
-            val isNight1 = currentNight == 1 || currentNight == 0
-            if (isTargetChurchill && isNight1) {
-                val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ اقدام ناموفق: بازیکن «${prof.name}» (حرفه‌ای) بازیکن «${target.name}» (چرچیل) را سلاخی کرد، اما چرچیل به دلیل مصونیت مطلق شب اول جان سالم به در برد.")
-            } else {
-                val updatedTarget = target.copy(
-                    isAlive = false,
-                    isSlaughtered = true,
-                    isSaved = false,
-                    isBlocked = false,
-                    isMuted = false,
-                    isShotThisNight = true
-                )
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🔪 بازیکن «${target.name}» توسط «${prof.name}» (حرفه‌ای) سلاخی شد و از بازی به طور کامل کنار رفت! پزشک نجات بی‌اثر است.")
-            }
-            
-            val refreshedProf = repository.getPlayerById(professionalId)
+            addNightAction(NightAction(actorId = professionalId, targetId = targetId, type = "SLAUGHTER"))
+            repository.addLog("🔪 اقدام سلاخی «${prof.name}» (حرفه‌ای) برای «${target.name}» در صف شب ثبت شد.")
+
             if (_selectedPlayerForSettings.value?.id == professionalId) {
-                _selectedPlayerForSettings.value = refreshedProf
+                _selectedPlayerForSettings.value = repository.getPlayerById(professionalId)
             }
         }
+    }
+
+    fun onProfessionalSlaughter(professionalId: Int, targetId: Int) {
+        professionalSlaughter(professionalId, targetId)
     }
 
     fun doctorHeal(doctorId: Int, targetId: Int) {
@@ -1646,7 +1606,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     val caps = Json.decodeFromString<List<RoleCapability>>(doc.capabilitiesJson)
                     val healCap = caps.find { it.name.contains("شفا") || it.name.contains("نجات") }
                     if (healCap != null && healCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: پزشک دیگر شفا / نجات مجاز باقی‌مانده ندارد.")
+                        repository.addLog("⚠️ خطا: پزشک دیگر شفا / نجات مجاز باقی‌آمده ندارد.")
                         return@launch
                     }
                 } catch (e: Exception) {
@@ -1671,59 +1631,29 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         } else cap
                     }
                     val updatedJson = Json.encodeToString(updatedCaps)
-                    val updatedDoc = doc.copy(capabilitiesJson = updatedJson)
+                    val finalSelfSaves = if (isDoctorSelfSave) doc.doctorSelfSavesCount + 1 else doc.doctorSelfSavesCount
+                    val updatedDoc = doc.copy(capabilitiesJson = updatedJson, doctorSelfSavesCount = finalSelfSaves)
                     repository.updatePlayer(updatedDoc)
                 } catch (e: Exception) {
                     // ignore format errors
                 }
+            } else if (isDoctorSelfSave) {
+                val updatedDoc = doc.copy(doctorSelfSavesCount = doc.doctorSelfSavesCount + 1)
+                repository.updatePlayer(updatedDoc)
             }
 
-            // Fetch current fresh states
-            val freshDoc = repository.getPlayerById(doctorId) ?: doc
-            val freshTarget = if (doctorId == targetId) freshDoc else (repository.getPlayerById(targetId) ?: target)
+            // Append to pending queue - DO NOT touch target entity directly
+            addNightAction(NightAction(actorId = doctorId, targetId = targetId, type = "HEAL"))
+            repository.addLog("🩺 اقدام نجات/شفا «${doc.name}» (پزشک) برای «${target.name}» در صف شب ثبت شد.")
 
-            // Calculate new self-save count
-            val finalSelfSavesCount = if (isDoctorSelfSave) {
-                freshDoc.doctorSelfSavesCount + 1
-            } else {
-                freshDoc.doctorSelfSavesCount
-            }
-
-            if (freshTarget.isSlaughtered) {
-                // Slaughtered -> Doctor's cure is ignored, they die, but action is consumed
-                val finalTarget = freshTarget.copy(
-                    isSaved = true,
-                    isHealedThisNight = true,
-                    isAlive = false,
-                    doctorSelfSavesCount = if (isDoctorSelfSave) finalSelfSavesCount else freshTarget.doctorSelfSavesCount
-                )
-                repository.updatePlayer(finalTarget)
-                if (doctorId != targetId) {
-                    val refreshedDocWithSaves = freshDoc.copy(doctorSelfSavesCount = finalSelfSavesCount)
-                    repository.updatePlayer(refreshedDocWithSaves)
-                }
-                repository.addLog("🩺 تلاش پزشک برای نجات «${freshTarget.name}» ثبت شد اما با شکست مواجه گردید (بازیکن سلاخی شده است).")
-            } else {
-                // Healed!
-                val finalTarget = freshTarget.copy(
-                    isSaved = true,
-                    isHealedThisNight = true,
-                    isAlive = if (freshTarget.isShotThisNight) true else freshTarget.isAlive,
-                    doctorSelfSavesCount = if (isDoctorSelfSave) finalSelfSavesCount else freshTarget.doctorSelfSavesCount
-                )
-                repository.updatePlayer(finalTarget)
-                if (doctorId != targetId) {
-                    val refreshedDocWithSaves = freshDoc.copy(doctorSelfSavesCount = finalSelfSavesCount)
-                    repository.updatePlayer(refreshedDocWithSaves)
-                }
-                repository.addLog("🩺 پزشک («${freshDoc.name}») بازیکن «${freshTarget.name}» را نجات داد/شفا بخشید.")
-            }
-
-            // Refresh selected player settings dialog state
             if (_selectedPlayerForSettings.value?.id == doctorId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(doctorId)
             }
         }
+    }
+
+    fun onDoctorHeal(doctorId: Int, targetId: Int) {
+        doctorHeal(doctorId, targetId)
     }
 
     fun godfatherShoot(godfatherId: Int, targetId: Int) {
@@ -1747,7 +1677,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     val caps = Json.decodeFromString<List<RoleCapability>>(gf.capabilitiesJson)
                     val gfCap = caps.find { it.name.contains("شلیک") }
                     if (gfCap != null && gfCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: رئیس مافیا (پدرخوانده) دیگر شلیک مجاز باقی‌مانده ندارد.")
+                        repository.addLog("⚠️ خطا: رئیس مافیا (پدرخوانده) دیگر شلیک مجاز باقی‌آمده ندارد.")
                         return@launch
                     }
                 } catch (e: Exception) {
@@ -1772,43 +1702,18 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val freshTarget = repository.getPlayerById(targetId) ?: target
+            // Append to pending queue - DO NOT touch target entity directly
+            addNightAction(NightAction(actorId = godfatherId, targetId = targetId, type = "SHOOT"))
+            repository.addLog("🎯 اقدام شلیک «${gf.name}» (پدرخوانده) برای «${target.name}» در صف شب ثبت شد.")
 
-            val isKiller = freshTarget.assignedRoleName?.contains("کیلر") == true
-            val isChurchill = freshTarget.assignedRoleName?.contains("چرچیل") == true
-            // Check if Tough Guy (جان‌سخت)
-            val isToughGuy = freshTarget.assignedRoleName?.contains("جان") == true && freshTarget.assignedRoleName?.contains("سخت") == true
-            
-            if (isKiller || isChurchill) {
-                // Killer/Churchill is immune to standard night kills
-                val updatedTarget = freshTarget.copy(isShotThisNight = true, isAlive = true)
-                repository.updatePlayer(updatedTarget)
-                val roleName = if (isKiller) "کیلر" else "چرچیل"
-                repository.addLog("🛡️ رئیس مافیا (پدرخوانده) به بازیکن «${freshTarget.name}» ($roleName) شلیک کرد اما $roleName به دلیل مصونیت شبانه زنده ماند.")
-            } else if (isToughGuy) {
-                // Tough Guy survives the shot
-                val updatedTarget = freshTarget.copy(isShotThisNight = true, isAlive = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ رئیس مافیا (پدرخوانده) به بازیکن «${freshTarget.name}» (جان‌سخت) شلیک کرد اما تیر بی‌اثر بود و جان سالم به در برد.")
-            } else {
-                // Check if healed by Doctor
-                if (freshTarget.isHealedThisNight) {
-                    val updatedTarget = freshTarget.copy(isShotThisNight = true, isAlive = true)
-                    repository.updatePlayer(updatedTarget)
-                    repository.addLog("🛡️ رئیس مافیا (پدرخوانده) به «${freshTarget.name}» شلیک کرد، اما پزشک او را نجات داده بود و زنده ماند.")
-                } else {
-                    // Eliminated
-                    val deadTarget = freshTarget.copy(isShotThisNight = true, isAlive = false)
-                    repository.updatePlayer(deadTarget)
-                    repository.addLog("💀 بازیکن «${freshTarget.name}» در شب توسط شلیک مستقیم رئیس مافیا (پدرخوانده) «${gf.name}» اعدام/کشته شد.")
-                }
-            }
-
-            // Refresh selected player settings dialog state
             if (_selectedPlayerForSettings.value?.id == godfatherId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(godfatherId)
             }
         }
+    }
+
+    fun onGodfatherShoot(godfatherId: Int, targetId: Int) {
+        godfatherShoot(godfatherId, targetId)
     }
 
     fun godfatherSlaughter(godfatherId: Int, targetId: Int) {
@@ -1830,9 +1735,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             if (gf.capabilitiesJson.isNotBlank()) {
                 try {
                     val caps = Json.decodeFromString<List<RoleCapability>>(gf.capabilitiesJson)
-                    val gfCap = caps.find { it.name.contains("شلیک") }
+                    val gfCap = caps.find { it.name.contains("شلیک") || it.name.contains("سلاخی") }
                     if (gfCap != null && gfCap.remainingCount <= 0) {
-                        repository.addLog("⚠️ خطا: رئیس مافیا (پدرخوانده) دیگر شلیک/سلاخی مجاز باقی‌مانده ندارد.")
+                        repository.addLog("⚠️ خطا: رئیس مافیا (پدرخوانده) دیگر شلیک/سلاخی مجاز باقی‌آمده ندارد.")
                         return@launch
                     }
                 } catch (e: Exception) {
@@ -1845,7 +1750,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     val caps = Json.decodeFromString<List<RoleCapability>>(gf.capabilitiesJson)
                     val updatedCaps = caps.map { cap ->
-                        if (cap.name.contains("شلیک") && cap.remainingCount > 0) {
+                        if ((cap.name.contains("شلیک") || cap.name.contains("سلاخی")) && cap.remainingCount > 0) {
                             cap.copy(remainingCount = cap.remainingCount - 1)
                         } else cap
                     }
@@ -1857,27 +1762,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Slaughter logic:
-            // Bypasses doctor's save, abilities neutralized, and receives permanent Slaughtered status
-            val isTargetChurchill = target.assignedRoleName?.contains("چرچیل") == true
-            val currentNight = gameLogs.value.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
-            val isNight1 = currentNight == 1 || currentNight == 0
-            if (isTargetChurchill && isNight1) {
-                val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ اقدام ناموفق: رئیس مافیا (پدرخوانده) «${gf.name}» به بازیکن «${target.name}» (چرچیل) حمله کرد، اما چرچیل به دلیل مصونیت مطلق شب اول جان سالم به در برد.")
-            } else {
-                val updatedTarget = target.copy(
-                    isAlive = false,
-                    isSlaughtered = true,
-                    isSaved = false,
-                    isBlocked = false,
-                    isMuted = false,
-                    isShotThisNight = true
-                )
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🔪 بازیکن «${target.name}» توسط رئیس مافیا (پدرخوانده) «${gf.name}» سلاخی شد و به طور کامل حذف گردید! نجات پزشک بی‌اثر است.")
-            }
+            // Append to pending queue - DO NOT touch target entity directly
+            addNightAction(NightAction(actorId = godfatherId, targetId = targetId, type = "SLAUGHTER"))
+            repository.addLog("🔪 اقدام سلاخی «${gf.name}» (پدرخوانده) برای «${target.name}» در صف شب ثبت شد.")
             
             val refreshedGf = repository.getPlayerById(godfatherId)
             if (_selectedPlayerForSettings.value?.id == godfatherId) {
@@ -1885,6 +1772,16 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun onGodfatherSlaughter(godfatherId: Int, targetId: Int) {
+        godfatherSlaughter(godfatherId, targetId)
+    }
+
+
+
+
+
+
 
     fun matadorBlock(matadorId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -2661,41 +2558,18 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val isGodfather = target.assignedRoleName?.contains("پدرخوانده") == true
-
-            val isTargetChurchill = target.assignedRoleName?.contains("چرچیل") == true
-            val currentNight = gameLogs.value.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
-            val isNight1 = currentNight == 1 || currentNight == 0
-
-            if (isTargetChurchill && isNight1) {
-                val updatedTarget = target.copy(isShotThisNight = true, isAlive = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ اقدام کیلر: کیلر به بازیکن «${target.name}» (چرچیل) حمله کرد اما چرچیل به دلیل مصونیت مطلق شب اول جان سالم به در برد.")
-            } else if (actionType == "شلیک" && isGodfather) {
-                // Godfather survives
-                val updatedTarget = target.copy(isShotThisNight = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ اقدام کیلر: کیلر به بازیکن «${target.name}» (پدرخوانده) شلیک کرد اما پدرخوانده جان سالم به در برد.")
-            } else {
-                // Killer kills target absolutely (whether Shoot or Slaughter)
-                val deadTarget = target.copy(
-                    isAlive = false,
-                    isSlaughtered = true, // Bypasses doctor's heal
-                    isSaved = false, // Neutralizes standard save
-                    isShotThisNight = true
-                )
-                repository.updatePlayer(deadTarget)
-                if (actionType == "سلاخی") {
-                    repository.addLog("💀 اقدام کیلر: بازیکن «${target.name}» توسط کیلر سلاخی شد و به طور کامل حذف گردید! نجات پزشک بی‌اثر است.")
-                } else {
-                    repository.addLog("💀 اقدام کیلر: بازیکن «${target.name}» مورد شلیک مستقیم کیلر قرار گرفت و حذف گردید! نجات پزشک بی‌اثر است.")
-                }
-            }
+            val type = if (actionType == "سلاخی") "SLAUGHTER" else "SHOOT"
+            addNightAction(NightAction(actorId = killerId, targetId = targetId, type = type))
+            repository.addLog("🎯 اقدام ${if (actionType == "سلاخی") "سلاخی" else "شلیک"} «${killer.name}» (کیلر) برای «${target.name}» در صف شب ثبت شد.")
 
             if (_selectedPlayerForSettings.value?.id == killerId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(killerId)
             }
         }
+    }
+
+    fun onKillerShoot(killerId: Int, targetId: Int, currentRound: Int, actionType: String) {
+        killerShoot(killerId, targetId, currentRound, actionType)
     }
 
     fun churchillShoot(churchillId: Int, targetId: Int) {
@@ -2744,29 +2618,17 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val isGodfather = target.assignedRoleName?.contains("پدرخوانده") == true
-
-            if (isGodfather) {
-                // Godfather survives
-                val updatedTarget = target.copy(isShotThisNight = true)
-                repository.updatePlayer(updatedTarget)
-                repository.addLog("🛡️ اقدام چرچیل: چرچیل به بازیکن «${target.name}» (پدرخوانده) شلیک کرد اما پدرخوانده جان سالم به در برد.")
-            } else {
-                // Churchill kills target absolutely (cannot be saved)
-                val deadTarget = target.copy(
-                    isAlive = false,
-                    isSlaughtered = true, // Bypasses doctor's heal
-                    isSaved = false, // Neutralizes standard save
-                    isShotThisNight = true
-                )
-                repository.updatePlayer(deadTarget)
-                repository.addLog("💀 اقدام چرچیل: بازیکن «${target.name}» مورد شلیک مستقیم چرچیل قرار گرفت و حذف گردید! نجات پزشک بی‌اثر است.")
-            }
+            addNightAction(NightAction(actorId = churchillId, targetId = targetId, type = "SHOOT"))
+            repository.addLog("🎯 اقدام شلیک «${churchill.name}» (چرچیل) برای «${target.name}» در صف شب ثبت شد.")
 
             if (_selectedPlayerForSettings.value?.id == churchillId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(churchillId)
             }
         }
+    }
+
+    fun onChurchillShoot(churchillId: Int, targetId: Int) {
+        churchillShoot(churchillId, targetId)
     }
 
     fun churchillSlaughter(churchillId: Int, targetId: Int) {
@@ -2815,15 +2677,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Churchill kills target absolutely (Even kills Godfather)
-            val deadTarget = target.copy(
-                isAlive = false,
-                isSlaughtered = true, // Bypasses doctor's heal
-                isSaved = false, // Neutralizes standard save
-                isShotThisNight = true
-            )
-            repository.updatePlayer(deadTarget)
-            repository.addLog("💀 اقدام چرچیل: بازیکن «${target.name}» توسط چرچیل سلاخی شد و به طور کامل حذف گردید! نجات پزشک بی‌اثر است.")
+            addNightAction(NightAction(actorId = churchillId, targetId = targetId, type = "SLAUGHTER"))
+            repository.addLog("🔪 اقدام سلاخی «${churchill.name}» (چرچیل) برای «${target.name}» در صف شب ثبت شد.")
 
             if (_selectedPlayerForSettings.value?.id == churchillId) {
                 _selectedPlayerForSettings.value = repository.getPlayerById(churchillId)
@@ -2831,42 +2686,65 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun onChurchillSlaughter(churchillId: Int, targetId: Int) {
+        churchillSlaughter(churchillId, targetId)
+    }
+
     fun resolveNightActions(actions: List<NightAction>) {
         viewModelScope.launch(Dispatchers.IO) {
             val currentNight = gameLogs.value.count { it.message.contains("فاز بازی به «شب 🌙» تغییر یافت") }
             val isNight1 = currentNight == 1 || currentNight == 0
 
-            // Step 1: Scan all night actions for 'سلاخی' targets.
-            // Mark these targets as absolutely dead.
-            // Remove or ignore any actions submitted by these slaughtered players from the execution queue.
-            val actualSlaughteredTargetIds = mutableSetOf<Int>()
+            // Step 1: Process Slaughters FIRST
+            val slaughteredPlayerIds = mutableSetOf<Int>()
             for (action in actions.filter { it.type == "SLAUGHTER" }) {
                 val targetPlayer = repository.getPlayerById(action.targetId) ?: continue
                 val isChurchill = targetPlayer.assignedRoleName?.contains("چرچیل") == true
                 if (isChurchill && isNight1) {
                     repository.addLog("🛡️ اقدام ناموفق: بازیکن «${targetPlayer.name}» (چرچیل) مورد سلاخی قرار گرفت، اما به دلیل مصونیت مطلق شب اول جان سالم به در برد.")
                 } else {
-                    actualSlaughteredTargetIds.add(action.targetId)
+                    slaughteredPlayerIds.add(action.targetId)
                 }
             }
 
-            // Remove or ignore any actions submitted by these slaughtered players from the execution queue
-            val executionQueue = actions.filter { it.actorId !in actualSlaughteredTargetIds }
+            // Step 2: Cancel Actions of Slaughtered Players
+            for (action in actions.filter { it.actorId in slaughteredPlayerIds }) {
+                val actor = repository.getPlayerById(action.actorId)
+                if (actor != null) {
+                    repository.addLog("🚫 لغو اقدام: بازیکن «${actor.name}» به دلیل سلاخی شدن پیش از اقدام، حرکت شب او لغو گردید.")
+                }
+            }
+            val executionQueue = actions.filter { it.actorId !in slaughteredPlayerIds }
 
-            // Step 2: Scan for 'شلیک' targets. Execute their submitted actions normally.
-            val shotTargetIds = mutableSetOf<Int>()
+            // Step 3: Process Shoots & Check Immunities
+            // CRITICAL IMMUNITY CHECK: Before marking the target as dead, check their role.
+            // If the target's role contains "پدرخوانده" OR "چرچیل", the normal shoot FAILS and the target SURVIVES.
+            val shotPlayerIds = mutableSetOf<Int>()
             for (action in executionQueue.filter { it.type == "SHOOT" }) {
                 val targetPlayer = repository.getPlayerById(action.targetId) ?: continue
-                val isChurchill = targetPlayer.assignedRoleName?.contains("چرچیل") == true
-                if (isChurchill && isNight1) {
-                    repository.addLog("🛡️ اقدام ناموفق: به بازیکن «${targetPlayer.name}» (چرچیل) شلیک شد، اما به دلیل مصونیت مطلق شب اول زنده ماند.")
+                val roleName = targetPlayer.assignedRoleName ?: ""
+                val isGodfather = roleName.contains("پدرخوانده")
+                val isChurchill = roleName.contains("چرچیل")
+                val isKiller = roleName.contains("کیلر")
+                val isToughGuy = roleName.contains("جان") && roleName.contains("سخت")
+
+                if (isGodfather || isChurchill || isKiller || isToughGuy) {
+                    val roleLabel = when {
+                        isGodfather -> "پدرخوانده"
+                        isChurchill -> "چرچیل"
+                        isKiller -> "کیلر"
+                        else -> "جان‌سخت"
+                    }
+                    repository.addLog("🛡️ اقدام ناموفق شلیک: به بازیکن «${targetPlayer.name}» ($roleLabel) شلیک شد، اما به دلیل مصونیت نقش زنده ماند.")
+                    val updatedTarget = targetPlayer.copy(isShotThisNight = true, isAlive = true)
+                    repository.updatePlayer(updatedTarget)
                 } else {
-                    shotTargetIds.add(action.targetId)
+                    shotPlayerIds.add(action.targetId)
                 }
             }
 
-            // Step 3: Process Heals (Doctor/Lecter).
-            // If a 'شلیک' target is healed, they survive. If a 'سلاخی' target is healed, the heal fails and they still die.
+            // Step 4: Process Heals
+            // Doctor/Lecter heals only apply to players in the shotPlayers list. Heals NEVER work on players in the slaughteredPlayers list.
             val healedTargetIds = executionQueue.filter { it.type == "HEAL" }.map { it.targetId }.toSet()
 
             val allInvolvedPlayerIds = (actions.map { it.actorId } + actions.map { it.targetId }).distinct()
@@ -2874,11 +2752,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 val player = repository.getPlayerById(playerId) ?: continue
                 var updated = player
 
-                val isChurchill = player.assignedRoleName?.contains("چرچیل") == true
-                val isKiller = player.assignedRoleName?.contains("کیلر") == true
-                val isToughGuy = player.assignedRoleName?.contains("جان") == true && player.assignedRoleName?.contains("سخت") == true
-
-                if (playerId in actualSlaughteredTargetIds) {
+                if (playerId in slaughteredPlayerIds) {
                     updated = updated.copy(
                         isAlive = false,
                         isSlaughtered = true,
@@ -2889,18 +2763,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     repository.updatePlayer(updated)
                     repository.addLog("🔪 بازیکن «${player.name}» سلاخی شد و از بازی به طور کامل کنار رفت! پزشک نجات بی‌اثر است.")
-                } else if (playerId in shotTargetIds) {
+                } else if (playerId in shotPlayerIds) {
                     val isHealed = playerId in healedTargetIds
-                    if (isChurchill || isKiller) {
-                        updated = updated.copy(isShotThisNight = true, isAlive = true)
-                        repository.updatePlayer(updated)
-                        val roleLabel = if (isKiller) "کیلر" else "چرچیل"
-                        repository.addLog("🛡️ بازیکن «${player.name}» ($roleLabel) مورد شلیک قرار گرفت، اما به دلیل مصونیت شبانه زنده ماند.")
-                    } else if (isToughGuy) {
-                        updated = updated.copy(isShotThisNight = true, isAlive = true)
-                        repository.updatePlayer(updated)
-                        repository.addLog("🛡️ بازیکن «${player.name}» (جان‌سخت) مورد شلیک قرار گرفت، اما به دلیل جان‌سختی زنده ماند.")
-                    } else if (isHealed) {
+                    if (isHealed) {
                         updated = updated.copy(isShotThisNight = true, isAlive = true, isSaved = true)
                         repository.updatePlayer(updated)
                         repository.addLog("🛡️ به بازیکن «${player.name}» شلیک شد، اما به دلیل شفا/نجات پزشک زنده ماند.")

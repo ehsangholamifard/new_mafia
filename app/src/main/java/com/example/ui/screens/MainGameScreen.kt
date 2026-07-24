@@ -776,6 +776,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         initialValue = moderatorName,
                         onConfirm = { name ->
                             viewModel.setModeratorName(name)
+                            viewModel.startNewCleanGame()
                             viewModel.distributeRolesAndStartGame()
                             showModeratorNameDialog = false
                         },
@@ -5824,6 +5825,7 @@ fun PlayStageContent(
                     if (currentNightQueueIndex < nightQueue.size - 1) {
                         currentNightQueueIndex += 1
                     } else {
+                        viewModel.processEndOfNight()
                         showNewNightSummaryDialog = true
                     }
                     activeNightTargetId = null
