@@ -123,9 +123,9 @@ class MafiaRepository(private val mafiaDao: MafiaDao) {
                 ),
                 RoleEntity(
                     name = "دکتر لکتور 💊",
-                    description = "پزشک تیم مافیا که اعضای مافیا را در شب شفا داده و محافظت می‌کند",
+                    description = "پزشک تیم مافیا که هر شب میتواند یک نفر از اعضای مافیا یا خود را از شلیک شبانه نجات دهد.",
                     team = "Mafia",
-                    capabilitiesJson = """[{"name":"شفا‌یار مافیا 💊","totalCount":10,"remainingCount":10}]"""
+                    capabilitiesJson = """[{"name":"نجات/شفا 🩺","totalCount":10,"remainingCount":10}]"""
                 ),
                 RoleEntity(
                     name = "خریدار (مذاکره کننده) 🤝",

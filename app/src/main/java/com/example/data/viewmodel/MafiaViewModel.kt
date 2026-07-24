@@ -1682,6 +1682,14 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         doctorHeal(doctorId, targetId)
     }
 
+    fun lecterHeal(actorId: Int, targetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val action = NightAction(actorId = actorId, targetId = targetId, type = "HEAL")
+            addNightAction(action)
+            repository.addLog("🩺 اقدام نجات دکتر لکتور برای بازیکن با شناسه $targetId در صف شب ثبت شد.")
+        }
+    }
+
     fun godfatherShoot(godfatherId: Int, targetId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val gf = repository.getPlayerById(godfatherId) ?: return@launch

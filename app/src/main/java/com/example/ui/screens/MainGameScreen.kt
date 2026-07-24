@@ -539,6 +539,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         onDoctorHeal = { docId, targetId ->
                             viewModel.doctorHeal(docId, targetId)
                         },
+                        onLecterHeal = { actorId, targetId ->
+                            viewModel.lecterHeal(actorId, targetId)
+                        },
                         onGodfatherShoot = { gfId, targetId ->
                             viewModel.godfatherShoot(gfId, targetId)
                         },
@@ -7759,6 +7762,7 @@ fun PlayerSettingsDialog(
     onProfessionalShoot: (Int, Int, Boolean?) -> Unit = { _, _, _ -> },
     onProfessionalSlaughter: (Int, Int) -> Unit = { _, _ -> },
     onDoctorHeal: (Int, Int) -> Unit = { _, _ -> },
+    onLecterHeal: (Int, Int) -> Unit = { _, _ -> },
     onGodfatherShoot: (Int, Int) -> Unit = { _, _ -> },
     onGodfatherSlaughter: (Int, Int) -> Unit = { _, _ -> },
     onChurchillShoot: (Int, Int) -> Unit = { _, _ -> },
@@ -8046,6 +8050,115 @@ fun PlayerSettingsDialog(
                                     onDismiss = {
                                         showDoctorConfirmDialog = false
                                     }
+                                )
+                            }
+                        }
+                    } else if (player.assignedRoleName?.contains("لکتور") == true) {
+                        item {
+                            Text(
+                                text = "💊 مدیریت نجات دکتر لکتور:",
+                                fontWeight = FontWeight.Bold,
+                                color = AccentGold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            var isTargetMenuExpanded by remember { mutableStateOf(false) }
+                            var targetPlayerId by remember { mutableStateOf<Int?>(null) }
+                            val alivePlayers = remember(players) {
+                                players.filter { it.isSelected && it.isAlive }
+                            }
+                            val selectedTarget = remember(targetPlayerId, players) {
+                                players.find { it.id == targetPlayerId }
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF191928), RoundedCornerShape(8.dp))
+                                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                    .clickable { isTargetMenuExpanded = true }
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = selectedTarget?.name ?: "انتخاب بازیکن جهت نجات... 🩺",
+                                        color = if (selectedTarget != null) Color.White else Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = AccentGold
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = isTargetMenuExpanded,
+                                    onDismissRequest = { isTargetMenuExpanded = false },
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(Color(0xFF1E1E2E))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                ) {
+                                    if (alivePlayers.isEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text("هیچ بازیکن زنده معتبری یافت نشد", color = Color.Gray, fontSize = 11.sp) },
+                                            onClick = { isTargetMenuExpanded = false }
+                                        )
+                                    } else {
+                                        alivePlayers.forEach { aliveP ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = "${aliveP.name} (${aliveP.assignedRoleName ?: "بدون نقش"})",
+                                                        color = Color.White,
+                                                        fontSize = 11.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    targetPlayerId = aliveP.id
+                                                    isTargetMenuExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            var showHealConfirmDialog by remember { mutableStateOf(false) }
+                            val isActionEnabled = selectedTarget != null && !player.isBlocked
+
+                            Button(
+                                onClick = { if (selectedTarget != null) showHealConfirmDialog = true },
+                                enabled = isActionEnabled,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1B5E20),
+                                    disabledContainerColor = Color(0xFF2C2C35)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("ثبت نجات/شفا 🩺", color = if (isActionEnabled) Color.White else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (showHealConfirmDialog && selectedTarget != null) {
+                                StyledConfirmationDialog(
+                                    title = "تأیید نجات دکتر لکتور 💊",
+                                    message = "آیا دکتر لکتور بازیکن «${selectedTarget.name}» را از شلیک شبانه نجات دهد؟",
+                                    onConfirm = {
+                                        onLecterHeal(player.id, selectedTarget.id)
+                                        targetPlayerId = null
+                                        showHealConfirmDialog = false
+                                        handleDismiss()
+                                    },
+                                    onDismiss = { showHealConfirmDialog = false }
                                 )
                             }
                         }
