@@ -2969,21 +2969,27 @@ fun PlayStageContent(
                     }
                 }
 
-                // Top-right subtle but readable TextButton
-                TextButton(
+                // Top-right subtle but readable styled Button
+                Button(
                     onClick = { showRoleVerification = true },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1B1B2F),
+                        contentColor = Color.White
+                    ),
+                    border = BorderStroke(1.dp, PrimaryPurple.copy(alpha = 0.8f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(end = 4.dp, top = 2.dp)
-                        .testTag("day_role_verification_button"),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = PrimaryPurple
-                    )
+                        .align(Alignment.TopStart)
+                        .padding(start = 10.dp, top = 4.dp)
+                        .height(34.dp)
+                        .testTag("day_role_verification_button")
                 ) {
                     Text(
                         text = "معارفه نقشها 🎭",
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
@@ -4574,31 +4580,101 @@ fun PlayStageContent(
     }
 
     if (showSkipVotingDialog) {
-        AlertDialog(
-            onDismissRequest = { showSkipVotingDialog = false },
-            title = { Text("ورود به شب بدون رایگیری", color = Color.White) },
-            text = { Text("رایگیری انجام نشده است. آیا مطمئن هستید که میخواهید مستقیماً وارد فاز شب شوید؟", color = Color.LightGray) },
-            containerColor = Color(0xFF1E1E2E), // Dark theme
-            confirmButton = {
-                TextButton(onClick = { 
-                    showSkipVotingDialog = false
-                    val combatGunPlayer = players.firstOrNull { it.isSelected && it.isAlive && (it.hasCombatGun || it.hasLiveGunThisRound) }
-                    if (combatGunPlayer != null) {
-                        rifleTargetPlayer = combatGunPlayer
-                        showRifleKillDialog = true
-                    } else {
-                        onTogglePhase()
+        Dialog(onDismissRequest = { showSkipVotingDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(AccentGold.copy(alpha = 0.12f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = AccentGold,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
-                }) {
-                    Text("بله، شروع شب", color = Color(0xFFBB86FC))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSkipVotingDialog = false }) {
-                    Text("انصراف", color = Color.Gray)
+
+                    Text(
+                        text = "ورود به شب بدون رایگیری",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "رایگیری انجام نشده است. آیا مطمئن هستید که میخواهید مستقیماً وارد فاز شب شوید؟",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                showSkipVotingDialog = false
+                                val combatGunPlayer = players.firstOrNull { it.isSelected && it.isAlive && (it.hasCombatGun || it.hasLiveGunThisRound) }
+                                if (combatGunPlayer != null) {
+                                    rifleTargetPlayer = combatGunPlayer
+                                    showRifleKillDialog = true
+                                } else {
+                                    onTogglePhase()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "بله، شروع شب 👍",
+                                color = BackgroundDark,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { showSkipVotingDialog = false },
+                            border = BorderStroke(1.dp, BorderColor),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .height(44.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "خیر، انصراف",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
             }
-        )
+        }
     }
 
     if (showRifleKillDialog && rifleTargetPlayer != null) {
