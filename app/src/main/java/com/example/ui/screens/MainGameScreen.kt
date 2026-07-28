@@ -2852,6 +2852,8 @@ fun PlayStageContent(
     var showNightReportDialog by remember { mutableStateOf(false) }
     var showGameOverDialog by remember { mutableStateOf(false) }
     var showLastMoveDrawDialog by remember { mutableStateOf(false) }
+    var showDeathLotteryDialog by remember { mutableStateOf(false) }
+    var deathLotteryResult by remember { mutableStateOf<String?>(null) }
     var winnerTeamSelection by remember { mutableStateOf("") }
     var gameOverReasonInput by remember { mutableStateOf("") }
     var playerForKillerSelection by remember { mutableStateOf<PlayerEntity?>(null) }
@@ -3467,6 +3469,17 @@ fun PlayStageContent(
                     Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("کارت وصیت 🎲", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
+
+                Button(
+                    onClick = { showDeathLotteryDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(44.dp).testTag("death_lottery_button")
+                ) {
+                    Text("💀", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("قرعه مرگ", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
                 }
 
                 Button(
@@ -4279,6 +4292,133 @@ fun PlayStageContent(
             onBurnLastMoveCard = onBurnLastMoveCard,
             onDismiss = { showLastMoveDrawDialog = false }
         )
+    }
+
+    // Death Lottery dialog
+    if (showDeathLotteryDialog) {
+        Dialog(
+            onDismissRequest = { 
+                showDeathLotteryDialog = false 
+                deathLotteryResult = null
+            },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Header with Close Button and Centered Title
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = { 
+                                showDeathLotteryDialog = false 
+                                deathLotteryResult = null
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .testTag("close_death_lottery_button")
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+
+                        Text(
+                            text = "قرعه مرگ 🎲",
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.testTag("death_lottery_title")
+                        )
+                    }
+
+                    // Instruction Text
+                    Text(
+                        text = "برای تعیین شیر یا خط، روی دکمه زیر ضربه بزنید.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Result Display Area
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .background(Color(0xFF191928), RoundedCornerShape(12.dp))
+                            .border(1.dp, BorderColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (deathLotteryResult == null) {
+                            Text(
+                                text = "؟",
+                                color = TextGray,
+                                fontSize = 48.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        } else {
+                            val isShir = deathLotteryResult == "شیر"
+                            val resultColor = if (isShir) Color(0xFF10B981) else Color(0xFFEF4444)
+                            val emoji = if (isShir) "🦁" else "🖋️"
+                            
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = emoji,
+                                    fontSize = 42.sp,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                                Text(
+                                    text = deathLotteryResult!!,
+                                    color = resultColor,
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    // The Draw Button
+                    Button(
+                        onClick = {
+                            deathLotteryResult = if (kotlin.random.Random.nextBoolean()) "شیر" else "خط"
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("draw_death_lottery_button"),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "🎲",
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "قرعه بکش",
+                            color = BackgroundDark,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+        }
     }
 
     // 2.3 Game Over dialog
