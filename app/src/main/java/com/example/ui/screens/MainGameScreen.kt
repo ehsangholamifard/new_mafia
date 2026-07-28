@@ -36,6 +36,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -4845,30 +4848,42 @@ fun PlayStageContent(
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Surface(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                color = Color(0xFF1E1E2E), // Dark theme surface
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, BorderColor)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                color = Color(0xFF11111E), // Deep dark theme surface
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.6f))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Close Button
-                    IconButton(
-                        onClick = { showRoleVerification = false },
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxSize()
+                ) {
+                    // Header Section with Centered Title and Left-Aligned 'X' Button
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.End)
-                            .testTag("close_role_verification_button")
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        IconButton(
+                            onClick = { showRoleVerification = false },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .testTag("close_role_verification_button")
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                        
+                        Text(
+                            text = "لیست معارفه نقشها 🎭",
+                            fontSize = 20.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.testTag("role_verification_title")
+                        )
                     }
-                    
-                    Text(
-                        text = "لیست معارفه نقشها",
-                        fontSize = 24.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.CenterHorizontally).testTag("role_verification_title")
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
                     
                     // Sorted List: Independent -> Mafia -> Citizen
                     val activePlayers = players.filter { it.isSelected }
@@ -4887,13 +4902,64 @@ fun PlayStageContent(
                     )
                     
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .weight(1f)
                             .testTag("role_verification_players_list")
                     ) {
                         items(sortedPlayers) { player ->
+                            // Custom Card Gradient based on Team/Faction
+                            val cardGradient = when (player.assignedRoleTeam) {
+                                "Mafia" -> Brush.verticalGradient(
+                                    colors = listOf(Color(0xFF421E1E), Color(0xFF2B1212))
+                                )
+                                "Citizen" -> Brush.verticalGradient(
+                                    colors = listOf(Color(0xFF22442B), Color(0xFF112215))
+                                )
+                                "Independent" -> Brush.verticalGradient(
+                                    colors = listOf(Color(0xFF4D431B), Color(0xFF26210D))
+                                )
+                                else -> Brush.verticalGradient(
+                                    colors = listOf(Color(0xFF1E1E2F), Color(0xFF11111E))
+                                )
+                            }
+                            
+                            val (emoji, avatarBg, avatarBorder) = when {
+                                player.assignedRoleName?.contains("چرچیل") == true -> {
+                                    Triple("🎩", Color(0xFF2B250E), Color(0xFFFFB74D))
+                                }
+                                player.assignedRoleName?.contains("رئیس") == true || player.assignedRoleName?.contains("پدرخوانده") == true -> {
+                                    Triple("👑", Color(0xFF261212), Color(0xFFE57373))
+                                }
+                                player.assignedRoleName?.contains("لکتور") == true -> {
+                                    Triple("💊", Color(0xFF261212), Color(0xFFE57373))
+                                }
+                                player.assignedRoleTeam == "Mafia" -> {
+                                    Triple("👤", Color(0xFF261212), Color(0xFFE57373))
+                                }
+                                player.assignedRoleName?.contains("تفنگدار") == true -> {
+                                    Triple("🪖", Color(0xFF102114), Color(0xFF81C784))
+                                }
+                                player.assignedRoleName?.contains("کشیش") == true -> {
+                                    Triple("⛪", Color(0xFF102114), Color(0xFF81C784))
+                                }
+                                player.assignedRoleName?.contains("کارآگاه") == true || player.assignedRoleName?.contains("کاراگاه") == true -> {
+                                    Triple("🔍", Color(0xFF102114), Color(0xFF81C784))
+                                }
+                                player.assignedRoleTeam == "Citizen" -> {
+                                    Triple("🕊️", Color(0xFF102114), Color(0xFF81C784))
+                                }
+                                else -> {
+                                    when (player.assignedRoleTeam) {
+                                        "Independent" -> Triple("🎭", Color(0xFF2B250E), Color(0xFFFFB74D))
+                                        "Mafia" -> Triple("🕶️", Color(0xFF261212), Color(0xFFE57373))
+                                        else -> Triple("🕊️", Color(0xFF102114), Color(0xFF81C784))
+                                    }
+                                }
+                            }
+                            
                             val teamColor = when (player.assignedRoleTeam) {
                                 "Mafia" -> Color(0xFFEF4444)
                                 "Citizen" -> Color(0xFF10B981)
@@ -4906,29 +4972,71 @@ fun PlayStageContent(
                                 "Independent" -> "مستقل"
                                 else -> "ناشناس"
                             }
-                            // Render Player Name and Role in Large Text
-                            // Use Team Colors: Independent (Purple/Gold), Mafia (Red), Citizen (Green)
-                            Row(
+                            
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.3f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 12.dp, horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .background(cardGradient, shape = RoundedCornerShape(14.dp))
+                                    .shadow(4.dp, shape = RoundedCornerShape(14.dp))
                             ) {
-                                Text(
-                                    text = "${player.assignedRoleName ?: "نامشخص"} ($teamName)",
-                                    fontSize = 20.sp,
-                                    color = teamColor,
-                                    fontWeight = FontWeight.Black
-                                )
-                                Text(
-                                    text = player.name,
-                                    fontSize = 22.sp,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Column 4 (Far Left) - Refined Avatar with drop shadow and center alignment
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .shadow(3.dp, CircleShape)
+                                            .background(avatarBg, CircleShape)
+                                            .border(1.2.dp, avatarBorder, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(emoji, fontSize = 17.sp)
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    // Column 3 - Team Faction (parenthesis with custom team color)
+                                    Text(
+                                        text = "($teamName)",
+                                        color = teamColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.width(85.dp)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    // Column 2 - Persian Role Name (perfectly left/start-aligned)
+                                    Text(
+                                        text = player.assignedRoleName ?: "ناشناس",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        textAlign = TextAlign.Start,
+                                        modifier = Modifier.weight(1.2f)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    // Column 1 (Far Right) - Player Name (perfectly right/end-aligned)
+                                    Text(
+                                        text = player.name,
+                                        color = Color.White.copy(alpha = 0.95f),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.End,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
-                            HorizontalDivider(color = BorderColor.copy(alpha = 0.5f))
                         }
                     }
                 }
