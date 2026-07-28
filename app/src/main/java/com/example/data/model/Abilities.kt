@@ -177,24 +177,26 @@ data class NightActionQueueItem(
     val ability: Ability
 )
 
-fun getRoleNightPriority(roleName: String?): Int {
+fun getRoleNightPriority(roleName: String?, roleTeam: String?): Int {
     if (roleName == null) return 999
     return when {
-        // 1. INDEPENDENT TEAM (Top Priority)
+        // 1. INDEPENDENT TEAM (Top Priority: 100-199)
         roleName.contains("چرچیل") -> 100
         roleName.contains("هزارچهره") -> 101
         roleName.contains("نوستراداموس") -> 102
         roleName.contains("مجهول") -> 103
         roleName.contains("کیلر") -> 104
+        roleTeam == "Independent" -> 199 // Any unlisted independent role falls here
 
-        // 2. MAFIA TEAM (Second Priority)
+        // 2. MAFIA TEAM (Second Priority: 200-299)
         roleName.contains("پدرخوانده") || roleName.contains("رئیس") -> 200
         roleName.contains("لکتور") -> 201
         roleName.contains("ماتادور") -> 202
         roleName.contains("خریدار") -> 203
         roleName.contains("خرابکار") -> 204
+        roleTeam == "Mafia" -> 299 // Any unlisted mafia role (e.g., Simple Mafia) falls here
 
-        // 3. CITIZEN TEAM (Third Priority)
+        // 3. CITIZEN TEAM (Third Priority: 300-399)
         roleName.contains("ساقی") -> 300
         roleName.contains("کشیش") -> 301
         roleName.contains("کارآگاه") || roleName.contains("کاراگاه") -> 302
@@ -204,13 +206,14 @@ fun getRoleNightPriority(roleName: String?): Int {
         roleName.contains("تفنگدار") -> 306
         roleName.contains("همشهری کین") -> 307
         roleName.contains("روانپزشک") || roleName.contains("روان پزشک") -> 308
+        roleTeam == "Citizen" -> 399 // Any unlisted citizen role (e.g., Simple Citizen) falls here
 
-        else -> 900 // Any other role wakes up last
+        else -> 900 // Absolute fallback for completely unknown teams
     }
 }
 
 fun getNightPriority(roleName: String, teamName: String): Int {
-    return getRoleNightPriority(roleName)
+    return getRoleNightPriority(roleName, teamName)
 }
 
 fun buildNightQueue(players: List<PlayerEntity>, roles: List<RoleEntity>): List<NightActionQueueItem> {
@@ -247,6 +250,7 @@ fun buildNightQueue(players: List<PlayerEntity>, roles: List<RoleEntity>): List<
     return queue.sortedBy { item ->
         val role = roles.find { it.id == item.player.assignedRoleId || it.name == item.player.assignedRoleName }
         val roleName = item.player.assignedRoleName ?: role?.name ?: ""
-        getRoleNightPriority(roleName)
+        val roleTeam = item.player.assignedRoleTeam ?: role?.team ?: ""
+        getRoleNightPriority(roleName, roleTeam)
     }
 }

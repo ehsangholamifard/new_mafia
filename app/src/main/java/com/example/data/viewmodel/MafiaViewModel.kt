@@ -526,6 +526,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertPlayers(updatedPlayers + unselectedPlayers)
             
             // 4. Set UI States
+            _lastMoveCards.value = _lastMoveCards.value.map { it.copy(isBurnt = false) }.shuffled()
             _distributionQueue.value = updatedPlayers
             _gameStage.value = "DISTRIBUTION"
             _gamePhase.value = "Night"
@@ -1688,6 +1689,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             addNightAction(action)
             repository.addLog("🩺 اقدام نجات دکتر لکتور برای بازیکن با شناسه $targetId در صف شب ثبت شد.")
         }
+    }
+
+    fun getRoleNightPriority(roleName: String?, roleTeam: String?): Int {
+        return com.example.data.model.getRoleNightPriority(roleName, roleTeam)
     }
 
     fun godfatherShoot(godfatherId: Int, targetId: Int) {
