@@ -3199,18 +3199,20 @@ fun PlayStageContent(
                 EmptyListTip(text = "هیچ بازیکن منتخبی وجود ندارد. دکمه بازنشانی را بفشارید.")
             } else {
                 if (phase == "Day") {
-                    val sortedDayPlayers = remember(activeHandheldPlayers, currentRound) {
-                        activeHandheldPlayers.shuffled().sortedByDescending { it.isAlive }
+                    val sortedDayPlayers = remember(activeHandheldPlayers) {
+                        activeHandheldPlayers.sortedBy { it.id }
                     }
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(sortedDayPlayers) { player ->
+                        items(sortedDayPlayers, key = { it.id }) { player ->
                             DayPlayerCard(
                                 player = player,
                                 playersInDefense = playersInDefense,
-                                onPlayerClick = onPlayerClick
+                                onPlayerClick = onPlayerClick,
+                                onIncrementChallenge = { viewModel.incrementPlayerChallengeCount(it.id) },
+                                onDecrementChallenge = { viewModel.decrementPlayerChallengeCount(it.id) }
                             )
                         }
                     }
@@ -5265,7 +5267,9 @@ fun PlayStageContent(
 fun DayPlayerCard(
     player: PlayerEntity,
     playersInDefense: List<Int>,
-    onPlayerClick: (PlayerEntity) -> Unit
+    onPlayerClick: (PlayerEntity) -> Unit,
+    onIncrementChallenge: (PlayerEntity) -> Unit = {},
+    onDecrementChallenge: (PlayerEntity) -> Unit = {}
 ) {
     val displayNum = player.name.filter { it.isDigit() }.ifEmpty { player.id.toString() }
     val isDead = !player.isAlive || player.isKilledToday
@@ -5332,22 +5336,24 @@ fun DayPlayerCard(
         ) {
             // LEFT Side: Avatar and Player Info
             Row(
+                modifier = Modifier.weight(1f, fill = false),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Avatar circle
                 Box(
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(44.dp)
                         .background(avatarBg, CircleShape)
                         .border(1.2.dp, avatarBorderColor, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(emoji, fontSize = 19.sp)
+                    Text(emoji, fontSize = 18.sp)
                 }
 
                 // Name and Role column
                 Column(
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
@@ -5369,11 +5375,86 @@ fun DayPlayerCard(
                 }
             }
 
-            // RIGHT Side: Status area and Player Number
+            // RIGHT Side: Challenge Counter, Status area and Player Number
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Challenge Counter with Label
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "چالش ✋",
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier
+                            .background(Color(0xFF141423), RoundedCornerShape(10.dp))
+                            .border(1.dp, BorderColor.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 4.dp, vertical = 3.dp)
+                            .testTag("challenge_counter_container_${player.id}")
+                    ) {
+                        // Minus Button
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(
+                                    if (player.challengeCount > 0) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f),
+                                    CircleShape
+                                )
+                                .clickable(enabled = player.challengeCount > 0) {
+                                    onDecrementChallenge(player)
+                                }
+                                .testTag("challenge_decrement_${player.id}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "-",
+                                color = if (player.challengeCount > 0) Color.White else Color.Gray,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Count display
+                        Text(
+                            text = "${player.challengeCount}",
+                            color = if (player.challengeCount > 0) AccentGold else Color.White.copy(alpha = 0.85f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier
+                                .padding(horizontal = 6.dp)
+                                .testTag("challenge_count_${player.id}")
+                        )
+
+                        // Plus Button
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                                .clickable {
+                                    onIncrementChallenge(player)
+                                }
+                                .testTag("challenge_increment_${player.id}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "+",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
                 // Dynamic Status Area
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),

@@ -42,7 +42,8 @@ data class PlayerEntity(
     val isSilencedThisRound: Boolean = false,
     val isSabotaged: Boolean = false,
     val isBulletproof: Boolean = false,
-    val isProtected: Boolean = false
+    val isProtected: Boolean = false,
+    val challengeCount: Int = 0
 )
 
 @Entity(tableName = "roles")

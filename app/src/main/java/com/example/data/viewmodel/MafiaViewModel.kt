@@ -514,7 +514,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isSilencedThisRound = false,
                     isSabotaged = false,
                     isBulletproof = false,
-                    isProtected = false
+                    isProtected = false,
+                    challengeCount = 0
                 )
             }
 
@@ -537,6 +538,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     fun advanceToPlayStage() {
         _gameStage.value = "PLAY"
         _gamePhase.value = "Day"
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = players.value.map { it.copy(challengeCount = 0) }
+            repository.insertPlayers(updated)
+        }
     }
 
     fun clearLogs() {
@@ -1046,7 +1051,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                         isInsuredThisNight = false,
                         hasLiveGunThisRound = hasLiveGun,
                         hasCombatGun = hasCombat,
-                        hasBlankGun = hasBlank
+                        hasBlankGun = hasBlank,
+                        challengeCount = 0 // Daily challenge counter reset on new Day phase
                     )
                 }
                 if (liveGunSurvived) {
@@ -1054,6 +1060,23 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 repository.insertPlayers(updated)
             }
+        }
+    }
+
+    fun incrementPlayerChallengeCount(id: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val player = repository.getPlayerById(id) ?: return@launch
+            val updated = player.copy(challengeCount = player.challengeCount + 1)
+            repository.updatePlayer(updated)
+        }
+    }
+
+    fun decrementPlayerChallengeCount(id: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val player = repository.getPlayerById(id) ?: return@launch
+            if (player.challengeCount <= 0) return@launch
+            val updated = player.copy(challengeCount = player.challengeCount - 1)
+            repository.updatePlayer(updated)
         }
     }
 
@@ -1093,7 +1116,8 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     usedLiveGun = false,
                     isSilencedThisRound = false,
                     isBulletproof = false,
-                    isProtected = false
+                    isProtected = false,
+                    challengeCount = 0
                 )
             }
             repository.insertPlayers(restored)
@@ -2161,12 +2185,12 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Apply sacrifice penalty for next night
-            kane = kane.copy(willDieNextNight = true)
-            repository.updatePlayer(kane)
-
             val isMafia = target.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true
             if (isMafia) {
+                // Scenario A: Target is Mafia - Action succeeds and Kane is sacrificed next night
+                kane = kane.copy(willDieNextNight = true)
+                repository.updatePlayer(kane)
+
                 val updatedTarget = target.copy(isRevealedMafia = true)
                 repository.updatePlayer(updatedTarget)
                 repository.addLog("🔍 همشهری کین با موفقیت بازیکن «${target.name}» را به عنوان مافیا شناسایی کرد. (قربانی کین در شب بعد فعال شد)")
@@ -2174,7 +2198,11 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     onResult(true)
                 }
             } else {
-                repository.addLog("🔍 همشهری کین بازیکن «${target.name}» را استعلام کرد اما او مافیا نبود. (قربانی کین در شب بعد فعال شد)")
+                // Scenario B: Target is Citizen/Independent - Action fails, ability is consumed, Kane remains alive (no sacrifice)
+                kane = kane.copy(willDieNextNight = false)
+                repository.updatePlayer(kane)
+
+                repository.addLog("🔍 همشهری کین بازیکن «${target.name}» را استعلام کرد اما او مافیا نبود. (استعلام منفی - قابلیتش سوخت)")
                 viewModelScope.launch(Dispatchers.Main) {
                     onResult(false)
                 }
