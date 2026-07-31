@@ -7031,7 +7031,7 @@ fun PlayerSettingsDialog(
                                                 }
 
                                                 Text(
-                                                    text = "تأیید شلیک به نقش خاص ⚡",
+                                                    text = "شلیک به پدرخوانده 🎯",
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color.White,
                                                     fontSize = 15.sp,
@@ -7039,7 +7039,7 @@ fun PlayerSettingsDialog(
                                                 )
 
                                                 Text(
-                                                    text = "این نقش [پدرخوانده] است. آیا کشته شود؟",
+                                                    text = "آیا پدرخوانده با شلیک حرفه‌ای کشته شود؟",
                                                     color = Color.White,
                                                     fontSize = 13.sp,
                                                     textAlign = TextAlign.Center,
@@ -7060,15 +7060,15 @@ fun PlayerSettingsDialog(
                                                             showOverrideDialog = false
                                                             handleDismiss()
                                                         },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
                                                         modifier = Modifier
                                                             .weight(1f)
                                                             .height(44.dp),
                                                         shape = RoundedCornerShape(10.dp)
                                                     ) {
                                                         Text(
-                                                            text = "بله 👍",
-                                                            color = BackgroundDark,
+                                                            text = "بله، کشته شود",
+                                                            color = Color.White,
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 11.sp
                                                         )
@@ -7089,7 +7089,7 @@ fun PlayerSettingsDialog(
                                                         shape = RoundedCornerShape(10.dp)
                                                     ) {
                                                         Text(
-                                                            text = "خیر 👎",
+                                                            text = "خیر، کشته نشود",
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 11.sp
                                                         )

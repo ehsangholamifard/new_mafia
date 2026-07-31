@@ -1585,7 +1585,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            addNightAction(NightAction(actorId = professionalId, targetId = targetId, type = "SHOOT"))
+            addNightAction(NightAction(actorId = professionalId, targetId = targetId, type = "SHOOT", overrideKill = overrideKill))
             repository.addLog("💥 اقدام شلیک «${prof.name}» (حرفه‌ای) برای «${target.name}» در صف شب ثبت شد.")
 
             if (_selectedPlayerForSettings.value?.id == professionalId) {
@@ -2793,26 +2793,71 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             // CRITICAL IMMUNITY CHECK: Before marking the target as dead, check their role.
             // If the target's role contains "پدرخوانده" OR "چرچیل", the normal shoot FAILS and the target SURVIVES.
             val shotPlayerIds = mutableSetOf<Int>()
+            val misfiredProfessionalIds = mutableSetOf<Int>()
+
             for (action in executionQueue.filter { it.type == "SHOOT" }) {
                 val targetPlayer = repository.getPlayerById(action.targetId) ?: continue
-                val roleName = targetPlayer.assignedRoleName ?: ""
-                val isGodfather = roleName.contains("پدرخوانده")
-                val isChurchill = roleName.contains("چرچیل")
-                val isKiller = roleName.contains("کیلر")
-                val isToughGuy = roleName.contains("جان") && roleName.contains("سخت")
+                val actorPlayer = repository.getPlayerById(action.actorId) ?: continue
+                val isProfessional = actorPlayer.assignedRoleName?.contains("حرفه‌ای") == true
 
-                if (isGodfather || isChurchill || isKiller || isToughGuy) {
-                    val roleLabel = when {
-                        isGodfather -> "پدرخوانده"
-                        isChurchill -> "چرچیل"
-                        isKiller -> "کیلر"
-                        else -> "جان‌سخت"
+                if (isProfessional) {
+                    val isTargetMafia = targetPlayer.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true
+                    if (!isTargetMafia) {
+                        // Marksman targeted a Citizen / Independent (non-Mafia)
+                        misfiredProfessionalIds.add(action.actorId)
+                        repository.addLog("💥 خطای شلیک حرفه‌ای: بازیکن «${actorPlayer.name}» (حرفه‌ای) به اشتباه به بازیکن «${targetPlayer.name}» (غیر مافیا) شلیک کرد! شلیک به خود او برگشت.")
+                    } else {
+                        // Marksman targeted a Mafia player.
+                        val roleName = targetPlayer.assignedRoleName ?: ""
+                        val isGodfather = roleName.contains("پدرخوانده")
+                        val isChurchill = roleName.contains("چرچیل")
+                        val isKiller = roleName.contains("کیلر")
+                        val isToughGuy = roleName.contains("جان") && roleName.contains("سخت")
+
+                        if (isGodfather) {
+                            if (action.overrideKill == true) {
+                                shotPlayerIds.add(action.targetId)
+                                repository.addLog("💥 شلیک موفق حرفه‌ای به پدرخوانده (تأیید گرداننده): بازیکن «${actorPlayer.name}» (حرفه‌ای) به بازیکن «${targetPlayer.name}» (پدرخوانده) شلیک کرد و او کشته شد.")
+                            } else {
+                                repository.addLog("🛡️ اقدام ناموفق شلیک حرفه‌ای به پدرخوانده (عدم تأیید گرداننده): به بازیکن «${targetPlayer.name}» (پدرخوانده) شلیک شد، اما به دلیل مصونیت نقش زنده ماند.")
+                                val updatedTarget = targetPlayer.copy(isShotThisNight = true, isAlive = true)
+                                repository.updatePlayer(updatedTarget)
+                            }
+                        } else if (isChurchill || isKiller || isToughGuy) {
+                            val roleLabel = when {
+                                isChurchill -> "چرچیل"
+                                isKiller -> "کیلر"
+                                else -> "جان‌سخت"
+                            }
+                            repository.addLog("🛡️ اقدام ناموفق شلیک حرفه‌ای: به بازیکن «${targetPlayer.name}» ($roleLabel) شلیک شد، اما به دلیل مصونیت نقش زنده ماند.")
+                            val updatedTarget = targetPlayer.copy(isShotThisNight = true, isAlive = true)
+                            repository.updatePlayer(updatedTarget)
+                        } else {
+                            shotPlayerIds.add(action.targetId)
+                            repository.addLog("💥 شلیک موفق حرفه‌ای: بازیکن «${actorPlayer.name}» (حرفه‌ای) به سمت بازیکن «${targetPlayer.name}» (مافیا) شلیک کرد.")
+                        }
                     }
-                    repository.addLog("🛡️ اقدام ناموفق شلیک: به بازیکن «${targetPlayer.name}» ($roleLabel) شلیک شد، اما به دلیل مصونیت نقش زنده ماند.")
-                    val updatedTarget = targetPlayer.copy(isShotThisNight = true, isAlive = true)
-                    repository.updatePlayer(updatedTarget)
                 } else {
-                    shotPlayerIds.add(action.targetId)
+                    // Regular SHOOT action (from Godfather, Churchill, Killer, etc.)
+                    val roleName = targetPlayer.assignedRoleName ?: ""
+                    val isGodfather = roleName.contains("پدرخوانده")
+                    val isChurchill = roleName.contains("چرچیل")
+                    val isKiller = roleName.contains("کیلر")
+                    val isToughGuy = roleName.contains("جان") && roleName.contains("سخت")
+
+                    if (isGodfather || isChurchill || isKiller || isToughGuy) {
+                        val roleLabel = when {
+                            isGodfather -> "پدرخوانده"
+                            isChurchill -> "چرچیل"
+                            isKiller -> "کیلر"
+                            else -> "جان‌سخت"
+                        }
+                        repository.addLog("🛡️ اقدام ناموفق شلیک: به بازیکن «${targetPlayer.name}» ($roleLabel) شلیک شد، اما به دلیل مصونیت نقش زنده ماند.")
+                        val updatedTarget = targetPlayer.copy(isShotThisNight = true, isAlive = true)
+                        repository.updatePlayer(updatedTarget)
+                    } else {
+                        shotPlayerIds.add(action.targetId)
+                    }
                 }
             }
 
@@ -2836,6 +2881,10 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     repository.updatePlayer(updated)
                     repository.addLog("🔪 بازیکن «${player.name}» سلاخی شد و از بازی به طور کامل کنار رفت! پزشک نجات بی‌اثر است.")
+                } else if (playerId in misfiredProfessionalIds) {
+                    updated = updated.copy(isShotThisNight = true, isAlive = false)
+                    repository.updatePlayer(updated)
+                    repository.addLog("💀 بازیکن «${player.name}» (حرفه‌ای) به دلیل خطای شلیک به بازیکن هم‌تیمی/غیرمافیا فدا شد و فوت کرد.")
                 } else if (playerId in shotPlayerIds) {
                     val isHealed = playerId in healedTargetIds
                     if (isHealed) {
@@ -2979,6 +3028,7 @@ data class GameEndResult(
 data class NightAction(
     val actorId: Int,
     val targetId: Int,
-    val type: String // "SLAUGHTER", "SHOOT", "HEAL"
+    val type: String, // "SLAUGHTER", "SHOOT", "HEAL"
+    val overrideKill: Boolean? = null
 )
 
