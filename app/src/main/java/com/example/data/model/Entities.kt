@@ -33,6 +33,7 @@ data class PlayerEntity(
     val doctorSelfSavesCount: Int = 0,
     val isRevealedMafia: Boolean = false,
     val willDieNextNight: Boolean = false,
+    val mustDieThisNight: Boolean = false,
     val isRevivedThisNight: Boolean = false,
     val hasBlankGunThisRound: Boolean = false,
     val hasLiveGunThisRound: Boolean = false,

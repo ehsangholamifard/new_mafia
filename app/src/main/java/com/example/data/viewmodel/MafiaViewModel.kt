@@ -540,6 +540,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isKilledToday = false,
                     isRevealedMafia = false,
                     willDieNextNight = false,
+                    mustDieThisNight = false,
                     isRevivedThisNight = false,
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
@@ -1047,22 +1048,21 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     if (it.isKilledToday) {
                         repository.addLog("💀 مرگ بازیکن «${it.name}» در روز جاری به دلیل عدم ثبت نجات، نهایی شد.")
                     }
-                    if (it.willDieNextNight && finalAlive) {
-                        finalAlive = false
-                        repository.addLog("💀 بازیکن «${it.name}» (${it.assignedRoleName ?: "همشهری کین"}) به علت استفاده از قابلیت خود (جان فدا) قربانی شد.")
-                    }
-                    if (it.hasCombatGun && finalAlive) {
+                    val isGunPenalty = it.hasCombatGun && finalAlive
+                    if (isGunPenalty) {
                         finalAlive = false
                         repository.addLog("☠️ جریمه تفنگ جنگی بلااستفاده: بازیکن «${it.name}» به علت عدم استفاده از تفنگ جنگی خود پیش از پایان فاز، کشته شد.")
                     }
+                    val newMustDieThisNight = it.mustDieThisNight || it.willDieNextNight
                     it.copy(
                         voteCount = 0,
                         isSaved = false,  // reset night buffers as we enter custom night
                         isHealedThisNight = false,
-                        isShotThisNight = false,
+                        isShotThisNight = isGunPenalty,
                         isInsuredThisNight = false,
                         isAlive = finalAlive,
-                        willDieNextNight = false, // Reset penalty flag as it is now executed
+                        willDieNextNight = false, // Reset willDieNextNight as it is transferred to mustDieThisNight for upcoming night
+                        mustDieThisNight = newMustDieThisNight,
                         isRevealedMafia = false, // Reset the night-revealed mafia status
                         isRevivedThisNight = false, // Reset the night-revived status
                         wasBlockedLastNight = false,
@@ -1165,6 +1165,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isSlaughtered = false,
                     isRevealedMafia = false,
                     willDieNextNight = false,
+                    mustDieThisNight = false,
                     isRevivedThisNight = false,
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
@@ -1244,6 +1245,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     isKilledToday = false,
                     isRevealedMafia = false,
                     willDieNextNight = false,
+                    mustDieThisNight = false,
                     isRevivedThisNight = false,
                     hasBlankGunThisRound = false,
                     hasLiveGunThisRound = false,
@@ -2245,7 +2247,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             val isMafia = target.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true
             if (isMafia) {
                 // Scenario A: Target is Mafia - Action succeeds and Kane is sacrificed next night
-                kane = kane.copy(willDieNextNight = true)
+                kane = kane.copy(willDieNextNight = true, mustDieThisNight = false)
                 repository.updatePlayer(kane)
 
                 val updatedTarget = target.copy(isRevealedMafia = true)
@@ -2256,7 +2258,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } else {
                 // Scenario B: Target is Citizen/Independent - Action fails, ability is consumed, Kane remains alive (no sacrifice)
-                kane = kane.copy(willDieNextNight = false)
+                kane = kane.copy(willDieNextNight = false, mustDieThisNight = false)
                 repository.updatePlayer(kane)
 
                 repository.addLog("🔍 همشهری کین بازیکن «${target.name}» را استعلام کرد اما او مافیا نبود. (استعلام منفی - قابلیتش سوخت)")
@@ -2951,6 +2953,20 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     updated = updated.copy(isSaved = true)
                     repository.updatePlayer(updated)
                     repository.addLog("🩺 بازیکن «${player.name}» مورد شفا/نجات پزشک قرار گرفت.")
+                }
+            }
+
+            // Process any scheduled sacrifice deaths (e.g., Citizen Kane) during night resolution
+            for (player in players.value.filter { it.isAlive }) {
+                if (player.mustDieThisNight) {
+                    val updated = player.copy(
+                        isAlive = false,
+                        isShotThisNight = true,
+                        mustDieThisNight = false,
+                        willDieNextNight = false
+                    )
+                    repository.updatePlayer(updated)
+                    repository.addLog("💀 بازیکن «${player.name}» (${player.assignedRoleName ?: "همشهری کین"}) به علت استفاده از قابلیت خود (جان فدا) قربانی شد.")
                 }
             }
 
