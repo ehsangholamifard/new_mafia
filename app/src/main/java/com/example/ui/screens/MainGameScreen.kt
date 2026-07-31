@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -155,6 +157,7 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
         var timerRemaining by rememberSaveable { mutableStateOf(60) }
         var timerIsRunning by rememberSaveable { mutableStateOf(false) }
         var showTimerModal by rememberSaveable { mutableStateOf(false) }
+        var timerWarningPlayed by rememberSaveable { mutableStateOf(false) }
 
         // --- Custom Polish Confirmation Dialog State ---
         var showConfirmDialog by remember { mutableStateOf(false) }
@@ -179,10 +182,29 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
             showConfirmDialog = true
         }
 
+        LaunchedEffect(timerRemaining) {
+            if (timerRemaining > 10) {
+                timerWarningPlayed = false
+            }
+        }
+
         LaunchedEffect(timerIsRunning, timerRemaining) {
             if (timerIsRunning && timerRemaining > 0) {
                 delay(1000L)
                 timerRemaining -= 1
+                if (timerRemaining == 10 && !timerWarningPlayed) {
+                    timerWarningPlayed = true
+                    try {
+                        val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 100)
+                        toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500)
+                        launch {
+                            delay(600)
+                            toneGen.release()
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             } else if (timerRemaining == 0) {
                 timerIsRunning = false
             }
@@ -2851,6 +2873,22 @@ fun PlayStageContent(
     var showDayStatsDialog by remember { mutableStateOf(false) }
     var showNightReportDialog by remember { mutableStateOf(false) }
     var showGameOverDialog by remember { mutableStateOf(false) }
+    val gameEndResult by viewModel.gameEndResult.collectAsStateWithLifecycle()
+    var showGameEndingAutoModal by remember { mutableStateOf(false) }
+    var showChaosAlertModal by remember { mutableStateOf(false) }
+
+    LaunchedEffect(gameEndResult, phase) {
+        if (phase == "Day") {
+            if (gameEndResult?.isGameOver == true) {
+                showGameEndingAutoModal = true
+                onTimerIsRunningChange(false)
+            } else if (gameEndResult?.isChaosPhase == true) {
+                showChaosAlertModal = true
+                onTimerIsRunningChange(false)
+            }
+        }
+    }
+    
     var showLastMoveDrawDialog by remember { mutableStateOf(false) }
     var showDeathLotteryDialog by remember { mutableStateOf(false) }
     var deathLotteryResult by remember { mutableStateOf<String?>(null) }
@@ -2908,14 +2946,16 @@ fun PlayStageContent(
                     }
 
                     // Compact Digital Timer (Shrunk UI and text sizes)
+                    val isWarning = timerRemaining <= 10 && timerRemaining > 0
+                    val timerColor = if (isWarning || timerRemaining == 0) Color(0xFFEF5350) else PrimaryPurple
                     val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
                     Box(
                         modifier = Modifier
                             .size(60.dp)
                             .background(Color(0xFF141324), CircleShape)
-                            .border(1.2.dp, PrimaryPurple, CircleShape)
+                            .border(1.2.dp, timerColor, CircleShape)
                             .then(
-                                Modifier.shadow(2.dp, CircleShape, spotColor = PrimaryPurple, ambientColor = PrimaryPurple)
+                                Modifier.shadow(2.dp, CircleShape, spotColor = timerColor, ambientColor = timerColor)
                             )
                             .clickable { onShowTimerModalChange(true) },
                         contentAlignment = Alignment.Center
@@ -2926,14 +2966,14 @@ fun PlayStageContent(
                         ) {
                             Text(
                                 text = formattedTime,
-                                color = Color.White,
+                                color = if (isWarning || timerRemaining == 0) Color(0xFFEF5350) else Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
                                 text = "باقیمانده",
-                                color = TextGray,
+                                color = if (isWarning || timerRemaining == 0) Color(0xFFEF5350).copy(alpha = 0.8f) else TextGray,
                                 fontSize = 7.sp
                             )
                         }
@@ -3125,10 +3165,12 @@ fun PlayStageContent(
                 )
 
                 // Small timer capsule in top corner
+                val isWarning = timerRemaining <= 10 && timerRemaining > 0
+                val timerColor = if (isWarning || timerRemaining == 0) Color(0xFFEF5350) else PrimaryPurple
                 Row(
                     modifier = Modifier
                         .background(Color(0xFF141324), RoundedCornerShape(12.dp))
-                        .border(1.dp, PrimaryPurple.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .border(1.dp, timerColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                         .clickable { onShowTimerModalChange(true) }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -3137,7 +3179,7 @@ fun PlayStageContent(
                     val formattedTime = "${timerRemaining / 60}:${(timerRemaining % 60).toString().padStart(2, '0')}"
                     Text(
                         text = formattedTime,
-                        color = Color.White,
+                        color = if (isWarning || timerRemaining == 0) Color(0xFFEF5350) else Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
@@ -3221,7 +3263,7 @@ fun PlayStageContent(
                     val currentItem = nightQueue.getOrNull(currentNightQueueIndex)
                     val displayedNightPlayers = remember(players) {
                         players
-                            .filter { it.isAlive && it.isSelected }
+                            .filter { it.isSelected }
                             .sortedBy { viewModel.getRoleNightPriority(it.assignedRoleName, it.assignedRoleTeam) }
                     }
                     LazyColumn(
@@ -3256,8 +3298,9 @@ fun PlayStageContent(
                                 border = borderStroke,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(if (isDead) Modifier.alpha(0.55f) else Modifier)
                                     .clickable {
-                                        if (currentItem != null) {
+                                        if (!isDead && currentItem != null) {
                                             when (currentItem.ability.id) {
                                                 "HACK" -> {
                                                     if (activeNightTargetIds.contains(player.id)) {
@@ -3323,16 +3366,25 @@ fun PlayStageContent(
                                         }
 
                                         Column {
-                                            Text(
-                                                text = player.name,
-                                                color = if (isDead) Color.Gray else Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = player.name,
+                                                    color = if (isDead) Color.LightGray else Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                                if (isDead) {
+                                                    Text("💀", fontSize = 14.sp)
+                                                }
+                                            }
                                             Text(
                                                 text = player.assignedRoleName ?: "شهروند ساده",
-                                                color = Color.Gray,
-                                                fontSize = 11.sp
+                                                color = if (isDead) Color(0xFFDDDDDD) else Color.Gray,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isDead) FontWeight.Bold else FontWeight.Normal
                                             )
                                         }
                                     }
@@ -3460,39 +3512,42 @@ fun PlayStageContent(
         if (phase == "Day") {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Button(
                     onClick = { showLastMoveDrawDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentGold, contentColor = BackgroundDark),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(44.dp)
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                    modifier = Modifier.weight(1f).height(44.dp).testTag("last_move_card_button")
                 ) {
-                    Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("کارت وصیت 🎲", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text("🎲", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("حرکت آخر", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1)
                 }
 
                 Button(
                     onClick = { showDeathLotteryDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                     shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp),
                     modifier = Modifier.weight(1f).height(44.dp).testTag("death_lottery_button")
                 ) {
-                    Text("💀", fontSize = 14.sp)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("قرعه مرگ", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
+                    Text("💀", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("قرعه مرگ", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, maxLines = 1)
                 }
 
                 Button(
                     onClick = { showGameOverDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentCrimson),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(44.dp)
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                    modifier = Modifier.weight(1f).height(44.dp).testTag("finish_game_button")
                 ) {
-                    Icon(imageVector = Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("اتمام بازی 🏁", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
+                    Text("🏁", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("اتمام بازی", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, maxLines = 1)
                 }
             }
         }
@@ -4521,6 +4576,214 @@ fun PlayStageContent(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text("انصراف", fontWeight = FontWeight.Normal, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showGameEndingAutoModal && gameEndResult != null && gameEndResult!!.isGameOver) {
+        var independentChaosSelection by remember { mutableStateOf<String?>(null) }
+        val result = gameEndResult!!
+
+        Dialog(
+            onDismissRequest = { /* Game Master must explicitly choose an option */ },
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .imePadding()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val icon = when {
+                        result.winType.contains("INDEPENDENT") && !result.winType.contains("CHAOS") -> "🏆"
+                        result.winType.contains("CHAOS") -> "🎲"
+                        else -> "🏆"
+                    }
+                    Text(
+                        text = "$icon ${result.winnerTitle}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = result.reasonDescription,
+                        color = TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+
+                    if (result.winType == "INDEPENDENT_CHAOS") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable { independentChaosSelection = "INDEPENDENT_WIN" }
+                                    .background(if (independentChaosSelection == "INDEPENDENT_WIN") Color.White.copy(alpha=0.1f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
+                                RadioButton(
+                                    selected = independentChaosSelection == "INDEPENDENT_WIN",
+                                    onClick = { independentChaosSelection = "INDEPENDENT_WIN" },
+                                    colors = RadioButtonDefaults.colors(selectedColor = AccentGold, unselectedColor = Color.Gray)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("🤝 دست دادن انجام شد (برد مستقل)", color = Color.White, fontSize = 13.sp)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable { independentChaosSelection = "CITIZEN_WIN" }
+                                    .background(if (independentChaosSelection == "CITIZEN_WIN") Color.White.copy(alpha=0.1f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
+                                RadioButton(
+                                    selected = independentChaosSelection == "CITIZEN_WIN",
+                                    onClick = { independentChaosSelection = "CITIZEN_WIN" },
+                                    colors = RadioButtonDefaults.colors(selectedColor = AccentGold, unselectedColor = Color.Gray)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("❌ دست دادن انجام نشد (برد شهروند)", color = Color.White, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val finalWinner = if (result.winType == "INDEPENDENT_CHAOS") {
+                                    if (independentChaosSelection == "INDEPENDENT_WIN") "Independent"
+                                    else "Citizen"
+                                } else if (result.winType == "INDEPENDENT_WIN") {
+                                    "Independent"
+                                } else if (result.winType == "MAFIA_WIN") {
+                                    "Mafia"
+                                } else {
+                                    "Citizen"
+                                }
+                                val finalTitle = if (result.winType == "INDEPENDENT_CHAOS") {
+                                    if (independentChaosSelection == "INDEPENDENT_WIN") "اتمام بازی - پیروزی نقش مستقل (دست دادن)"
+                                    else "اتمام بازی - پیروزی شهروند (عدم دست دادن)"
+                                } else {
+                                    "اتمام بازی - ${result.winnerTitle}"
+                                }
+
+                                onSaveGameOverReport(finalWinner, finalTitle)
+                                showGameEndingAutoModal = false
+                                onResetGame()
+                            },
+                            enabled = result.winType != "INDEPENDENT_CHAOS" || independentChaosSelection != null,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (result.winType != "INDEPENDENT_CHAOS" || independentChaosSelection != null) Color(0xFF10B981) else Color.Gray,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("تأیید و اتمام بازی", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { 
+                                showGameEndingAutoModal = false 
+                                onTimerIsRunningChange(true)
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("ادامه بازی", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showChaosAlertModal && gameEndResult != null && gameEndResult!!.isChaosPhase) {
+        val result = gameEndResult!!
+        Dialog(
+            onDismissRequest = { 
+                showChaosAlertModal = false
+                onTimerIsRunningChange(true)
+            },
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .imePadding()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "⚠️ هشدار: ورود به فاز کیآس (Chaos)",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF59E0B),
+                        fontSize = 17.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = result.reasonDescription,
+                        color = TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            showChaosAlertModal = false
+                            onTimerIsRunningChange(true)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF59E0B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Text("متوجه شدم", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }

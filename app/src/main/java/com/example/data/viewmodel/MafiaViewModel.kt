@@ -63,6 +63,9 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     private val _gameStage = MutableStateFlow("SETUP")
     val gameStage: StateFlow<String> = _gameStage.asStateFlow()
 
+    private val _gameEndResult = MutableStateFlow<GameEndResult?>(null)
+    val gameEndResult: StateFlow<GameEndResult?> = _gameEndResult.asStateFlow()
+
     // Moderator Name state
     private val _moderatorName = MutableStateFlow("")
     val moderatorName: StateFlow<String> = _moderatorName.asStateFlow()
@@ -541,6 +544,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = players.value.map { it.copy(challengeCount = 0) }
             repository.insertPlayers(updated)
+            checkGameEndingConditions(updated)
         }
     }
 
@@ -1059,6 +1063,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                     _musketeerLiveGunExhausted.value = true
                 }
                 repository.insertPlayers(updated)
+                checkGameEndingConditions(updated)
             }
         }
     }
@@ -1082,6 +1087,7 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Reset All Game State ---
     fun resetGame() {
+        _gameEndResult.value = null
         viewModelScope.launch(Dispatchers.IO) {
             // Restore all players to alive, no assignments
             val restored = players.value.map {
@@ -2853,7 +2859,121 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun checkGameEndingConditions(currentPlayers: List<PlayerEntity> = players.value): GameEndResult {
+        val alivePlayers = currentPlayers.filter { it.isAlive }
+        
+        var mafiaCount = 0
+        var citizenCount = 0
+        var independentCount = 0
+
+        for (player in alivePlayers) {
+            if (player.assignedRoleTeam?.equals("Mafia", ignoreCase = true) == true) {
+                mafiaCount++
+            } else if (player.assignedRoleTeam?.equals("Citizen", ignoreCase = true) == true) {
+                citizenCount++
+            } else if (player.assignedRoleTeam?.equals("Independent", ignoreCase = true) == true) {
+                independentCount++
+            }
+        }
+
+        val totalAliveCount = alivePlayers.size
+
+        // PRIORITY 1: Special 3-Player Independent Conditions (Team-Based)
+        if (totalAliveCount == 3 && independentCount == 1) {
+            // Case A (1 Independent + 1 Citizen + 1 Mafia) -> INDEPENDENT WINS
+            if (citizenCount == 1 && mafiaCount == 1) {
+                val result = GameEndResult(
+                    isGameOver = true,
+                    winType = "INDEPENDENT_WIN",
+                    winnerTitle = "برد مستقل",
+                    reasonDescription = "سه نفر (مستقل، شهروند و مافیا) باقی مانده‌اند. مستقل برنده بازی است!"
+                )
+                _gameEndResult.value = result
+                return result
+            } 
+            // Case B (1 Independent + 2 Citizens) -> INDEPENDENT CHAOS
+            else if (citizenCount == 2 && mafiaCount == 0) {
+                val result = GameEndResult(
+                    isGameOver = false,
+                    winType = "INDEPENDENT_CHAOS",
+                    winnerTitle = "هشدار: ورود به فاز کیآس (Chaos)",
+                    reasonDescription = "تنها ۲ شهروند و نقش مستقل زنده مانده‌اند. بازی وارد وضعیت کیآس اختصاصی مستقل شد.",
+                    isChaosPhase = true,
+                    chaosType = "INDEPENDENT_CHAOS"
+                )
+                _gameEndResult.value = result
+                return result
+            } 
+            // Case C (1 Independent + 2 Mafia) -> MAFIA WINS
+            else if (citizenCount == 0 && mafiaCount == 2) {
+                val result = GameEndResult(
+                    isGameOver = true,
+                    winType = "MAFIA_WIN",
+                    winnerTitle = "برد تیم مافیا",
+                    reasonDescription = "سه نفر (مستقل و دو مافیا) باقی مانده‌اند. مستقل شکست خورد و تیم مافیا برنده بازی است!"
+                )
+                _gameEndResult.value = result
+                return result
+            }
+        }
+
+        // Standard Chaos Phase (2 Citizens + 1 Mafia)
+        if (totalAliveCount == 3 && citizenCount == 2 && mafiaCount == 1 && independentCount == 0) {
+            val result = GameEndResult(
+                isGameOver = false,
+                winType = "NONE",
+                winnerTitle = "هشدار: ورود به فاز کیآس (Chaos)",
+                reasonDescription = "تنها ۲ شهروند و ۱ مافیا زنده مانده‌اند. بازی وارد مرحله کیآس و دست دادن شد.",
+                isChaosPhase = true,
+                chaosType = "STANDARD_CHAOS"
+            )
+            _gameEndResult.value = result
+            return result
+        }
+
+        // PRIORITY 2: Standard Win Conditions
+        if (totalAliveCount > 0 && mafiaCount >= (citizenCount + independentCount)) {
+            val result = GameEndResult(
+                isGameOver = true,
+                winType = "MAFIA_WIN",
+                winnerTitle = "برد تیم مافیا",
+                reasonDescription = "تعداد اعضای مافیا برابر یا بیشتر از سایرین است. مافیا برنده بازی شد!"
+            )
+            _gameEndResult.value = result
+            return result
+        }
+
+        if (totalAliveCount > 0 && mafiaCount == 0 && independentCount == 0) {
+            val result = GameEndResult(
+                isGameOver = true,
+                winType = "CITIZEN_WIN",
+                winnerTitle = "برد تیم شهروند",
+                reasonDescription = "تمامی اعضای مافیا و مستقل از بازی خارج شدند. شهروندان برنده بازی شدند!"
+            )
+            _gameEndResult.value = result
+            return result
+        }
+
+        val result = GameEndResult(
+            isGameOver = false,
+            winType = "NONE",
+            winnerTitle = "بازی ادامه دارد",
+            reasonDescription = ""
+        )
+        _gameEndResult.value = result
+        return result
+    }
 }
+
+data class GameEndResult(
+    val isGameOver: Boolean,
+    val winType: String,
+    val winnerTitle: String,
+    val reasonDescription: String,
+    val isChaosPhase: Boolean = false,
+    val chaosType: String? = null
+)
 
 @Serializable
 data class NightAction(
