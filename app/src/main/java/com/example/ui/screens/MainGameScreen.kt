@@ -603,6 +603,9 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
                         musketeerLiveGunExhausted = musketeerLiveGunExhausted,
                         onDirectCombatShot = { shooterId, targetId ->
                             viewModel.executeDirectCombatShot(shooterId, targetId)
+                        },
+                        onSwapRoles = { playerAId, playerBId ->
+                            viewModel.swapPlayerRoles(playerAId, playerBId)
                         }
                     )
                 }
@@ -6238,12 +6241,16 @@ fun PlayerSettingsDialog(
     onCitizenKaneReveal: (Int, Int, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onGiveGun: (Int, Int, Boolean) -> Unit = { _, _, _ -> },
     musketeerLiveGunExhausted: Boolean = false,
-    onDirectCombatShot: (Int, Int) -> Unit = { _, _ -> }
+    onDirectCombatShot: (Int, Int) -> Unit = { _, _ -> },
+    onSwapRoles: (Int, Int) -> Unit = { _, _ -> }
 ) {
     var noteText by remember { mutableStateOf(player.note) }
     var showOverrideDialog by remember { mutableStateOf(false) }
     var userSelectedCapabilityCount by remember { mutableStateOf("1") }
     var showRoleRevealOverlay by remember { mutableStateOf(false) }
+    var showSwapRoleSelection by remember { mutableStateOf(false) }
+    var selectedSwapTargetPlayer by remember { mutableStateOf<PlayerEntity?>(null) }
+    var showSwapConfirmationDialog by remember { mutableStateOf(false) }
 
     val caps = remember(player.capabilitiesJson) {
         try {
@@ -6332,28 +6339,53 @@ fun PlayerSettingsDialog(
                     HorizontalDivider(color = BorderColor)
                 }
 
-                // Show Role Secret Button (Accessible to DM to reveal role cards to player in-person)
+                // Show Role Secret Button and Swap Roles Button
                 item {
-                    Button(
-                        onClick = { showRoleRevealOverlay = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF1E1D31),
-                            contentColor = AccentGold
-                        ),
-                        border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.4f)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("show_role_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "نمایش نقش 👁️",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Button(
+                            onClick = { showRoleRevealOverlay = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1E1D31),
+                                contentColor = AccentGold
+                            ),
+                            border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("show_role_button")
+                        ) {
+                            Text(
+                                text = "نمایش نقش 👁️",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Button(
+                            onClick = { showSwapRoleSelection = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1E1D31),
+                                contentColor = AccentGold
+                            ),
+                            border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("swap_role_button")
+                        ) {
+                            Text(
+                                text = "تغییر نقش 🔄",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
 
                 // Section 1: Note editor
@@ -8735,6 +8767,246 @@ fun PlayerSettingsDialog(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSwapRoleSelection) {
+        Dialog(
+            onDismissRequest = { showSwapRoleSelection = false }
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = BorderStroke(1.dp, BorderColor),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .testTag("swap_role_selection_dialog")
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "انتخاب بازیکن جهت جابجایی 🔄",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    
+                    Text(
+                        text = "یک بازیکن را برای جابجایی نقش با «${player.name}» انتخاب کنید:",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    val otherPlayers = players.filter { it.id != player.id }
+                    if (otherPlayers.isEmpty()) {
+                        Text(
+                            text = "بازیکن دیگری در بازی یافت نشد.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(otherPlayers) { p ->
+                                val seatNum = players.indexOf(p) + 1
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF1E1D31), RoundedCornerShape(10.dp))
+                                        .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            selectedSwapTargetPlayer = p
+                                            showSwapRoleSelection = false
+                                            showSwapConfirmationDialog = true
+                                        }
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(AccentGold.copy(alpha = 0.15f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = seatNum.toString(),
+                                                color = AccentGold,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Text(
+                                            text = p.name,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        if (!p.isAlive) {
+                                            Text(
+                                                text = "(مرده 💀)",
+                                                color = AccentCrimson,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    
+                                    val roleText = p.assignedRoleName ?: "بدون نقش"
+                                    val teamColor = when (p.assignedRoleTeam) {
+                                        "Mafia" -> AccentCrimson
+                                        "Citizen" -> AccentCitizen
+                                        else -> AccentGold
+                                    }
+                                    Text(
+                                        text = roleText,
+                                        color = teamColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { showSwapRoleSelection = false },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent,
+                            contentColor = Color.White
+                        ),
+                        border = BorderStroke(1.dp, BorderColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                    ) {
+                        Text(
+                            text = "انصراف",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSwapConfirmationDialog) {
+        val target = selectedSwapTargetPlayer
+        if (target != null) {
+            Dialog(
+                onDismissRequest = { showSwapConfirmationDialog = false }
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    border = BorderStroke(1.dp, BorderColor),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .testTag("swap_role_confirmation_dialog")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(AccentGold.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = AccentGold,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Text(
+                            text = "جابجایی نقش 🔄",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = "آیا مطمئن هستید که میخواهید نقش این بازیکن را با نقش «${target.name}» جابجا کنید؟",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    onSwapRoles(player.id, target.id)
+                                    showSwapConfirmationDialog = false
+                                    selectedSwapTargetPlayer = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("swap_confirm_button"),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(
+                                    text = "بله، جابجا شود",
+                                    color = BackgroundDark,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    showSwapConfirmationDialog = false
+                                    selectedSwapTargetPlayer = null
+                                },
+                                border = BorderStroke(1.dp, BorderColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("swap_cancel_button"),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(
+                                    text = "انصراف",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
                     }
                 }

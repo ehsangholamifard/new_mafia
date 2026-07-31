@@ -348,6 +348,38 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
         _selectedPlayerForSettings.value = player
     }
 
+    fun swapPlayerRoles(playerAId: Int, playerBId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val playerA = repository.getPlayerById(playerAId) ?: return@launch
+            val playerB = repository.getPlayerById(playerBId) ?: return@launch
+            
+            val updatedA = playerA.copy(
+                assignedRoleId = playerB.assignedRoleId,
+                assignedRoleName = playerB.assignedRoleName,
+                assignedRoleTeam = playerB.assignedRoleTeam,
+                capabilitiesJson = playerB.capabilitiesJson
+            )
+            
+            val updatedB = playerB.copy(
+                assignedRoleId = playerA.assignedRoleId,
+                assignedRoleName = playerA.assignedRoleName,
+                assignedRoleTeam = playerA.assignedRoleTeam,
+                capabilitiesJson = playerA.capabilitiesJson
+            )
+            
+            repository.updatePlayer(updatedA)
+            repository.updatePlayer(updatedB)
+            
+            repository.addLog("🔄 جابجایی نقش: نقش بازیکن «${playerA.name}» با نقش بازیکن «${playerB.name}» جابجا شد.")
+            
+            if (_selectedPlayerForSettings.value?.id == playerAId) {
+                _selectedPlayerForSettings.value = updatedA
+            } else if (_selectedPlayerForSettings.value?.id == playerBId) {
+                _selectedPlayerForSettings.value = updatedB
+            }
+        }
+    }
+
     // --- Role Configuration ---
     fun updateRoleCount(id: Int, count: Int) {
         if (count < 0) return
@@ -764,15 +796,24 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePlayerLife(id: Int) {
+        val isNight = _gamePhase.value == "Night"
         players.value.find { it.id == id }?.let { p ->
-            val updated = p.copy(isAlive = !p.isAlive)
+            val nextAlive = !p.isAlive
+            val updated = p.copy(
+                isAlive = nextAlive,
+                isShotThisNight = if (isNight) !nextAlive else p.isShotThisNight
+            )
             if (_selectedPlayerForSettings.value?.id == id) {
                 _selectedPlayerForSettings.value = updated
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
             val p = repository.getPlayerById(id) ?: return@launch
-            val updated = p.copy(isAlive = !p.isAlive)
+            val nextAlive = !p.isAlive
+            val updated = p.copy(
+                isAlive = nextAlive,
+                isShotThisNight = if (isNight) !nextAlive else p.isShotThisNight
+            )
             repository.updatePlayer(updated)
             repository.addLog("بازیکن «${p.name}» تغییر وضعیت حیات داد: ${if (updated.isAlive) "زنده 🟢" else "حذف شده ⚰️"}")
             if (_selectedPlayerForSettings.value?.id == id) {
@@ -809,10 +850,20 @@ class MafiaViewModel(application: Application) : AndroidViewModel(application) {
                 "RIFLE" -> "تنبلی تفنگ جنگی ⚔️"
                 else -> "دلیل منطقی / شات بازی 🎯"
             }
+            val isNight = _gamePhase.value == "Night"
             val updated = if (reasonType == "RIFLE") {
-                p.copy(isAlive = false, hasCombatGun = false, hasLiveGunThisRound = false, usedLiveGun = true)
+                p.copy(
+                    isAlive = false,
+                    hasCombatGun = false,
+                    hasLiveGunThisRound = false,
+                    usedLiveGun = true,
+                    isShotThisNight = if (isNight) true else p.isShotThisNight
+                )
             } else {
-                p.copy(isAlive = false)
+                p.copy(
+                    isAlive = false,
+                    isShotThisNight = if (isNight) true else p.isShotThisNight
+                )
             }
             repository.updatePlayer(updated)
             repository.addLog("💀 بازیکن «${p.name}» به علت [$reasonText] از بازی حذف شد.")
