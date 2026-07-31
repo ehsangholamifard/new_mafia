@@ -6243,6 +6243,7 @@ fun PlayerSettingsDialog(
     var noteText by remember { mutableStateOf(player.note) }
     var showOverrideDialog by remember { mutableStateOf(false) }
     var userSelectedCapabilityCount by remember { mutableStateOf("1") }
+    var showRoleRevealOverlay by remember { mutableStateOf(false) }
 
     val caps = remember(player.capabilitiesJson) {
         try {
@@ -6329,6 +6330,30 @@ fun PlayerSettingsDialog(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     HorizontalDivider(color = BorderColor)
+                }
+
+                // Show Role Secret Button (Accessible to DM to reveal role cards to player in-person)
+                item {
+                    Button(
+                        onClick = { showRoleRevealOverlay = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E1D31),
+                            contentColor = AccentGold
+                        ),
+                        border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("show_role_button")
+                    ) {
+                        Text(
+                            text = "نمایش نقش 👁️",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
 
                 // Section 1: Note editor
@@ -8546,6 +8571,175 @@ fun PlayerSettingsDialog(
                 handleDismiss()
             }
         )
+    }
+
+    if (showRoleRevealOverlay) {
+        val cleanRoleName = remember(player.assignedRoleName) {
+            (player.assignedRoleName ?: "نامشخص")
+                .replace("🔍", "")
+                .replace("🩺", "")
+                .replace("🔫", "")
+                .replace("🪖", "")
+                .replace("🛡️", "")
+                .replace("💪", "")
+                .replace("🌊", "")
+                .replace("⚡", "")
+                .replace("📰", "")
+                .replace("⛪", "")
+                .replace("🕊️", "")
+                .replace("👑", "")
+                .replace("💊", "")
+                .replace("🤝", "")
+                .replace("💣", "")
+                .replace("👤❓", "")
+                .replace("👤", "")
+                .replace("🧣", "")
+                .replace("📡", "")
+                .replace("🍷", "")
+                .replace("🪦", "")
+                .replace("🎯", "")
+                .replace("🎭", "")
+                .replace("🔮", "")
+                .replace("🎩", "")
+                .trim()
+        }
+
+        fun getLocalRoleEmoji(roleName: String): String {
+            return when {
+                roleName.contains("🔍") -> "🔍"
+                roleName.contains("🩺") -> "🩺"
+                roleName.contains("🔫") -> "🔫"
+                roleName.contains("🪖") -> "🪖"
+                roleName.contains("🛡️") -> "🛡️"
+                roleName.contains("💪") -> "💪"
+                roleName.contains("🌊") -> "🌊"
+                roleName.contains("⚡") -> "⚡"
+                roleName.contains("📰") -> "📰"
+                roleName.contains("⛪") -> "⛪"
+                roleName.contains("🕊️") -> "🕊️"
+                roleName.contains("👑") -> "👑"
+                roleName.contains("💊") -> "💊"
+                roleName.contains("🤝") -> "🤝"
+                roleName.contains("💣") -> "💣"
+                roleName.contains("👤❓") -> "👤❓"
+                roleName.contains("👤") -> "👤"
+                roleName.contains("🧣") -> "🧣"
+                roleName.contains("📡") -> "📡"
+                roleName.contains("🍷") -> "🍷"
+                roleName.contains("🪦") -> "🪦"
+                roleName.contains("🎯") -> "🎯"
+                roleName.contains("🎭") -> "🎭"
+                roleName.contains("🔮") -> "🔮"
+                roleName.contains("🎩") -> "🎩"
+                roleName.contains("پدرخوانده") -> "🕶️"
+                roleName.contains("کیلر") -> "🔪"
+                roleName.contains("چرچیل") -> "🎩"
+                roleName.contains("حرفه‌ای") -> "🎯"
+                else -> "🎭"
+            }
+        }
+
+        Dialog(
+            onDismissRequest = { showRoleRevealOverlay = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .clickable { showRoleRevealOverlay = false },
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = when (player.assignedRoleTeam) {
+                            "Mafia" -> Color(0xFF160A0A)
+                            "Citizen" -> Color(0xFF0A160C)
+                            else -> Color(0xFF16150A)
+                        }
+                    ),
+                    border = BorderStroke(
+                        width = 2.dp,
+                        color = when (player.assignedRoleTeam) {
+                            "Mafia" -> AccentCrimson
+                            "Citizen" -> AccentCitizen
+                            else -> AccentGold
+                        }
+                    ),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .padding(24.dp)
+                        .shadow(24.dp, shape = RoundedCornerShape(24.dp))
+                        .clickable(enabled = false) {}
+                        .testTag("role_reveal_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        // Very large Role Emoji
+                        Text(
+                            text = getLocalRoleEmoji(player.assignedRoleName ?: ""),
+                            fontSize = 72.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+
+                        // Role Name
+                        Text(
+                            text = cleanRoleName,
+                            color = when (player.assignedRoleTeam) {
+                                "Mafia" -> AccentCrimson
+                                "Citizen" -> AccentCitizen
+                                else -> AccentGold
+                            },
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 28.sp,
+                            textAlign = TextAlign.Center
+                        )
+
+                        // Team Name
+                        val teamText = when (player.assignedRoleTeam) {
+                            "Mafia" -> "تیم مافیا 🕶️"
+                            "Citizen" -> "تیم شهروندان 🕊️"
+                            else -> "جناح مستقل 🎭"
+                        }
+                        Text(
+                            text = teamText,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Close Button
+                        Button(
+                            onClick = { showRoleRevealOverlay = false },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentGold,
+                                contentColor = BackgroundDark
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("role_reveal_close_button")
+                        ) {
+                            Text(
+                                text = "متوجه شدم",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
