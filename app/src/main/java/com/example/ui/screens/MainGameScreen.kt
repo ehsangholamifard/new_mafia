@@ -182,31 +182,48 @@ fun MainGameScreen(viewModel: MafiaViewModel) {
             showConfirmDialog = true
         }
 
+        LaunchedEffect(phase) {
+            timerIsRunning = false
+            timerWarningPlayed = false
+        }
+
         LaunchedEffect(timerRemaining) {
             if (timerRemaining > 10) {
                 timerWarningPlayed = false
             }
         }
 
-        LaunchedEffect(timerIsRunning, timerRemaining) {
-            if (timerIsRunning && timerRemaining > 0) {
-                delay(1000L)
-                timerRemaining -= 1
-                if (timerRemaining == 10 && !timerWarningPlayed) {
-                    timerWarningPlayed = true
-                    try {
-                        val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 100)
-                        toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500)
-                        launch {
-                            delay(600)
-                            toneGen.release()
+        LaunchedEffect(timerIsRunning) {
+            if (!timerIsRunning) {
+                timerWarningPlayed = false
+            }
+        }
+
+        LaunchedEffect(timerIsRunning, phase) {
+            if (timerIsRunning && phase == "Day") {
+                while (timerIsRunning && phase == "Day" && timerRemaining > 0) {
+                    delay(1000L)
+                    if (timerIsRunning && phase == "Day" && timerRemaining > 0) {
+                        val prev = timerRemaining
+                        timerRemaining -= 1
+                        if (prev == 11 && timerRemaining == 10 && !timerWarningPlayed) {
+                            timerWarningPlayed = true
+                            try {
+                                val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 100)
+                                toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500)
+                                launch {
+                                    delay(600)
+                                    toneGen.release()
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
                     }
                 }
-            } else if (timerRemaining == 0) {
-                timerIsRunning = false
+                if (timerRemaining == 0) {
+                    timerIsRunning = false
+                }
             }
         }
 
